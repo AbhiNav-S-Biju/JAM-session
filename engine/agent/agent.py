@@ -29,7 +29,8 @@ _tainted = False
 
 
 def emit(**kw):
-    kw["ts"] = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime()) + f".{int(time.time() * 1000) % 1000:03d}Z"
+    t = time.time()  # one clock read so seconds and milliseconds agree
+    kw["ts"] = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(t)) + f".{int(t * 1000) % 1000:03d}Z"
     print(json.dumps(kw), flush=True)
 
 
