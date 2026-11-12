@@ -203,6 +203,7 @@ def halt():
 
 
 def reset():
+    write_status(state="idle", message="resetting")  # docker calls take ~2 s on WSL; tell the dashboard now
     p = _current.get("proc")
     if p:
         p.terminate()

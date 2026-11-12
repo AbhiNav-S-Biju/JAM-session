@@ -87,7 +87,13 @@ All shared files live in `shared/`. Track A writes them, Track B reads them. Tra
 
 **Policy** — `shared/policy.json`: allowed paths, restricted paths (dummy secrets), blocked/allowed destinations, asset values. Header shows its SHA-256.
 
-**Control** (B -> A): B writes a command file `shared/runtime/control.json` `{"cmd":"emergency_halt|run_benign|run_attack|reset","ts":...}`; A's engine polls it and replies by updating events/incidents. (HTTP instead is fine if both agree; keep file-based by default.)
+**Control** (B -> A): B writes a command file `shared/runtime/control.json` `{"cmd":"emergency_halt|run_benign|run_attack|run_benign_unusual|reset","ts":...}`; A's engine polls it and replies by updating events/incidents. (HTTP instead is fine if both agree; keep file-based by default.)
+- Every new command needs a NEW `ts` value (the engine ignores a repeated ts). Unknown commands are rejected, never executed.
+- Engine status (A8, read by the dashboard for the SAFE/SUSPICIOUS/CONTAINED badge and buttons): `shared/runtime/engine_status.json` = `{"state":"idle|running|contained|finished|error","mode","run_id","incident_id","message","last_cmd","updated_at"}`.
+- A full run takes about 16 s (about 8 s of start-up on WSL); show "starting..." while `state` is `running` and no events have arrived yet.
+- Events can arrive slightly out of order (network capture lags up to about 0.5 s): sort by `ts` in the UI.
+- Real sample output from the engine: `shared/fixtures/real/` (events, incidents, evidence chains, status). PCAPs are gitignored.
+- Start the engine for the dashboard: `python3 engine/run.py serve-control`. One-off terminal runs: `python3 engine/run.py attack|benign|benign_unusual`.
 
 **API** (Track B serves; used by dashboard): `GET /api/state` (counts + current state SAFE/SUSPICIOUS/CONTAINED), `GET /api/events`, `GET /api/incidents`, `GET /api/incidents/{id}/report` (HTML), `POST /api/control`, `GET /api/verify/{id}` (re-verifies the hash chain).
 
