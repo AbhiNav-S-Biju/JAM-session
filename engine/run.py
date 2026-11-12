@@ -208,8 +208,9 @@ def reset():
         p.terminate()
     docker("rm", "-f", CONTAINER)
     docker("rm", "-f", "cagewatch-netmon")
-    for name in ("events.jsonl", "capture.pcap", CONTROL):
-        path = name if os.path.isabs(name) else os.path.join(RUNTIME, name)
+    # Never delete control.json here: the dashboard may already have written the next command.
+    for name in ("events.jsonl", "capture.pcap"):
+        path = os.path.join(RUNTIME, name)
         if os.path.exists(path):
             os.remove(path)
     write_status(state="idle", mode=None, run_id=None, incident_id=None, message="reset")
