@@ -1,0 +1,9 @@
+{
+  "state": "contained",
+  "mode": "attack",
+  "run_id": "run-attack-20261112-204351",
+  "incident_id": "INC-2026-11-12-006",
+  "message": "agent contained",
+  "updated_at": "2026-11-12T20:44:10.295Z",
+  "last_cmd": "reset"
+}
