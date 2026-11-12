@@ -8,7 +8,7 @@ RUN="run-$MODE-$(date +%H%M%S)"
 cd "$ROOT"
 
 LOG="$(mktemp)"
-python3 engine/collector/collector.py --run-id "$RUN" --until-exit >"$LOG" 2>&1 &
+python3 engine/collector/collector.py --run-id "$RUN" --until-exit --rules engine.detect.rules:evaluate >"$LOG" 2>&1 &
 CPID=$!
 for _ in $(seq 1 300); do grep -q "collector: ready" "$LOG" && break; sleep 0.2; done   # up to 60 s (first run builds an image)
 grep -q "collector: ready" "$LOG" || { echo "collector did not become ready"; cat "$LOG"; kill $CPID; exit 1; }
@@ -28,7 +28,17 @@ for line in open(sys.argv[1]):
         what = "FAILED " + d["error"]
     if e["type"] == "step_result" and d["ok"]:
         continue
-    print(f'{e["id"]} {e["ts"][11:23]} {e["source"]:<10} {e["type"]:<12} {str(e["step_id"]):<8} {what}')
+    print(f'{e["verdict"][:4]:<4} {e["id"]} {e["ts"][11:23]} {e["source"]:<10} {e["type"]:<12} {str(e["step_id"]):<8} {what}')
 EOF
 ls -la "$ROOT/shared/runtime/capture.pcap" 2>/dev/null
+python3 - "$ROOT/shared/runtime/incidents.json" "$RUN" <<'EOF'
+import json, sys
+try: items = [i for i in json.load(open(sys.argv[1])) if i["run_id"] == sys.argv[2]]
+except (OSError, ValueError): items = []
+if not items: print("INCIDENT: none for", sys.argv[2])
+for i in items:
+    print(f'INCIDENT {i["incident_id"]} severity={i["severity"]} risk={i["risk_score"]} factors={i["score_factors"]}')
+    print("  chain:", " -> ".join(i["chain"]), f'| time_to_detect_ms={i["time_to_detect_ms"]}')
+    for r in i["rules_triggered"]: print(f'  {r["rule_id"]} {r["name"]}: events={r["event_ids"]} steps={r["step_ids"]}')
+EOF
 docker rm -f cagewatch-agent >/dev/null 2>&1 || true
