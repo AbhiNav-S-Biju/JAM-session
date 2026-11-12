@@ -91,7 +91,8 @@ def revoke_token(run_id):
 
 def _docker(*args):
     r = subprocess.run(["docker", *args], capture_output=True, text=True)
-    return r.returncode == 0, (r.stderr or r.stdout).strip() or None
+    ok = r.returncode == 0
+    return ok, None if ok else ((r.stderr or r.stdout).strip() or "failed")
 
 
 def pause():
@@ -132,8 +133,19 @@ def contain(inc, reason="auto"):
     with rules.LOCK:
         inc.setdefault("actions_taken", [])
         inc["containment_reason"] = reason
-    _record(inc, "docker pause", pause)
-    _record(inc, "network disconnect", disconnect)
+    # Freeze and cut the network at the same time: each docker call takes ~1 s on WSL, so in parallel.
+    results = {}
+    def run(name, fn):
+        t0 = now()
+        ok, err = fn()
+        results[name] = {"action": name, "ts": iso(now()), "ok": ok, "error": err, "took_ms": round((now() - t0) * 1000)}
+    workers = [threading.Thread(target=run, args=("docker pause", pause)),
+               threading.Thread(target=run, args=("network disconnect", disconnect))]
+    for w in workers:
+        w.start()
+    for w in workers:
+        w.join()
+    inc["actions_taken"] += [results["docker pause"], results["network disconnect"]]
     _record(inc, "revoke temp token", lambda: revoke_token(inc["run_id"]))
     done = now()
     with rules.LOCK:

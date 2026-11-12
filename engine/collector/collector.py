@@ -217,6 +217,27 @@ def watch_container(container, until_exit):
     p.terminate()
 
 
+def watch_network_events(network, container):
+    """docker's container filter does not match network events, so watch the sandbox network separately."""
+    p = subprocess.Popen(["docker", "events", "--format", "{{json .}}", "--filter", "type=network",
+                          "--filter", f"network={network}"], stdout=subprocess.PIPE, text=True)
+    for line in p.stdout:
+        try:
+            d = json.loads(line)
+        except ValueError:
+            continue
+        attrs = d.get("Actor", {}).get("Attributes", {})
+        if d.get("Action") == "disconnect":
+            cid = attrs.get("container", "")
+            name = sh("docker", "inspect", "-f", "{{.Name}}", cid).lstrip("/") if cid else ""
+            if name in (container, ""):
+                put(d.get("timeNano", time.time() * 1e9) / 1e9, "container", "disconnect",
+                    {"container": container, "network": attrs.get("name", network)})
+        if stop.is_set():
+            break
+    p.terminate()
+
+
 # ---------------- writer ----------------
 
 def writer(out_path, run_id, evaluate):
@@ -286,7 +307,8 @@ def main():
     subprocess.run(["docker", "rm", "-f", NETMON_NAME], capture_output=True)
     for target, args in ((watch_files, ()),
                          (watch_network, (bridge, subnet, os.path.join(a.out, "capture.pcap"))),
-                         (watch_container, (a.container, a.until_exit))):
+                         (watch_container, (a.container, a.until_exit)),
+                         (watch_network_events, (a.network, a.container))):
         threading.Thread(target=target, args=args, daemon=True).start()
     # If the agent is already running, attach to its logs now.
     if sh("docker", "ps", "-q", "-f", f"name=^{a.container}$"):
