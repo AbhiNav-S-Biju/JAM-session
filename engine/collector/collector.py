@@ -23,8 +23,8 @@ import importlib
 import json
 import os
 import queue
-import re
 import signal
+import struct
 import subprocess
 import sys
 import threading
@@ -114,37 +114,73 @@ def watch_files():
     p.terminate()
 
 
-TCP_RE = re.compile(r"^(\d+\.\d+) IP (\d+\.\d+\.\d+\.\d+)\.(\d+) > (\d+\.\d+\.\d+\.\d+)\.(\d+): (.*)$")
+def read_exact(stream, n):
+    buf = b""
+    while len(buf) < n:
+        chunk = stream.read(n - len(buf))
+        if not chunk:
+            return None
+        buf += chunk
+    return buf
 
 
-def watch_network(bridge, subnet, pcap_dir):
-    """Egress from the sandbox subnet. Full packets go to capture.pcap; the first packet of each new
-    flow (TCP SYN or first UDP packet) becomes a net_connect event."""
-    subprocess.run(["docker", "rm", "-f", NETMON_NAME], capture_output=True)
+def parse_packet(pkt):
+    """Ethernet + IPv4 + TCP/UDP. Returns (src, sport, dst, dport, proto, is_new_flow_packet) or None."""
+    if len(pkt) < 34 or pkt[12:14] != b"\x08\x00":
+        return None
+    ip = pkt[14:]
+    ihl = (ip[0] & 0x0F) * 4
+    proto_num = ip[9]
+    src = ".".join(str(b) for b in ip[12:16])
+    dst = ".".join(str(b) for b in ip[16:20])
+    l4 = ip[ihl:]
+    if len(l4) < 4:
+        return None
+    sport, dport = struct.unpack("!HH", l4[:4])
+    if proto_num == 6 and len(l4) >= 14:
+        flags = l4[13]
+        return src, sport, dst, dport, "tcp", bool(flags & 0x02) and not flags & 0x10  # SYN, not SYN-ACK
+    if proto_num == 17:
+        return src, sport, dst, dport, "udp", True
+    return None
+
+
+def watch_network(bridge, subnet, pcap_path):
+    """Egress from the sandbox subnet. tcpdump (in a helper container on the host network) streams raw
+    pcap to us; we save it to capture.pcap and turn the first packet of each new flow (TCP SYN or first
+    UDP packet) into a net_connect event."""
     bpf = f"src net {subnet} and not dst net {subnet}"
-    script = (f"umask 000; tcpdump -i {bridge} -U -n -w - '{bpf}' 2>/dev/null "
-              f"| tee /out/capture.pcap | tcpdump -n -tt -l -r - 2>/dev/null")
     p = subprocess.Popen(["docker", "run", "--rm", "--name", NETMON_NAME, "--net=host",
                           "--cap-drop=ALL", "--cap-add=NET_RAW", "--cap-add=NET_ADMIN",
-                          "-v", f"{pcap_dir}:/out", NETMON_IMAGE, "sh", "-c", script],
-                         stdout=subprocess.PIPE, text=True)
+                          NETMON_IMAGE, "tcpdump", "-i", bridge, "-U", "-n", "-w", "-", bpf],
+                         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     seen = set()
-    for line in p.stdout:
-        m = TCP_RE.match(line.strip())
-        if not m:
-            continue
-        t, src, sport, dst, dport, rest = m.groups()
-        proto = "udp" if "UDP" in rest or "udp" in rest else "tcp"
-        if proto == "tcp" and "Flags [S]" not in rest:
-            continue  # only new connection attempts
-        key = (src, sport, dst, dport, proto)
-        if key in seen:  # SYN retransmits
-            continue
-        seen.add(key)
-        put(float(t), "network", "net_connect",
-            {"src_ip": src, "src_port": int(sport), "dst_ip": dst, "dst_port": int(dport), "proto": proto})
-        if stop.is_set():
-            break
+    with open(pcap_path, "wb") as out:
+        header = read_exact(p.stdout, 24)
+        if not header:
+            return
+        out.write(header)
+        endian = "<" if header[:4] == b"\xd4\xc3\xb2\xa1" else ">"
+        while not stop.is_set():
+            rec = read_exact(p.stdout, 16)
+            if not rec:
+                break
+            sec, usec, incl, _orig = struct.unpack(endian + "IIII", rec)
+            pkt = read_exact(p.stdout, incl)
+            if pkt is None:
+                break
+            out.write(rec + pkt)
+            out.flush()
+            parsed = parse_packet(pkt)
+            if not parsed:
+                continue
+            src, sport, dst, dport, proto, new_flow = parsed
+            key = (src, sport, dst, dport, proto)
+            if not new_flow or key in seen:  # skip mid-flow packets and SYN retransmits
+                continue
+            seen.add(key)
+            put(sec + usec / 1e6, "network", "net_connect",
+                {"src_ip": src, "src_port": sport, "dst_ip": dst, "dst_port": dport, "proto": proto})
     p.terminate()
 
 
@@ -239,15 +275,24 @@ def main():
     signal.signal(signal.SIGINT, lambda *_: stop.set())
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
 
-    for target, args in ((watch_files, ()), (watch_network, (bridge, subnet, a.out)),
+    subprocess.run(["docker", "rm", "-f", NETMON_NAME], capture_output=True)
+    for target, args in ((watch_files, ()),
+                         (watch_network, (bridge, subnet, os.path.join(a.out, "capture.pcap"))),
                          (watch_container, (a.container, a.until_exit))):
         threading.Thread(target=target, args=args, daemon=True).start()
     # If the agent is already running, attach to its logs now.
     if sh("docker", "ps", "-q", "-f", f"name=^{a.container}$"):
         threading.Thread(target=follow_agent_logs, args=(a.container,), daemon=True).start()
 
+    # Wait until the network monitor is actually running, then tell the caller it is safe to start the agent.
+    for _ in range(50):
+        if sh("docker", "ps", "-q", "-f", f"name=^{NETMON_NAME}$"):
+            break
+        time.sleep(0.2)
+    time.sleep(1.0)  # inotify watches + tcpdump attach
     out_path = os.path.join(a.out, "events.jsonl")
     print(f"collector: run={a.run_id} bridge={bridge} subnet={subnet} -> {out_path}", flush=True)
+    print("collector: ready", flush=True)
     n = writer(out_path, a.run_id, evaluate)
     subprocess.run(["docker", "rm", "-f", NETMON_NAME], capture_output=True)
     print(f"collector: wrote {n} events", flush=True)

@@ -7,11 +7,14 @@ MODE="${1:-attack}"
 RUN="run-$MODE-$(date +%H%M%S)"
 cd "$ROOT"
 
-python3 engine/collector/collector.py --run-id "$RUN" --until-exit &
+LOG="$(mktemp)"
+python3 engine/collector/collector.py --run-id "$RUN" --until-exit >"$LOG" 2>&1 &
 CPID=$!
-sleep 4   # let inotify and the network monitor come up
+for _ in $(seq 1 300); do grep -q "collector: ready" "$LOG" && break; sleep 0.2; done   # up to 60 s (first run builds an image)
+grep -q "collector: ready" "$LOG" || { echo "collector did not become ready"; cat "$LOG"; kill $CPID; exit 1; }
 engine/sandbox/run_agent.sh "$MODE" >/dev/null
-wait "$CPID"
+timeout 90 tail --pid="$CPID" -f /dev/null || { echo "collector did not stop, killing"; kill $CPID; }
+cat "$LOG"
 
 python3 - "$ROOT/shared/runtime/events.jsonl" <<'EOF'
 import json, sys
