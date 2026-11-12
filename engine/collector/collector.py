@@ -229,8 +229,10 @@ def watch_network_events(network, container):
         attrs = d.get("Actor", {}).get("Attributes", {})
         if d.get("Action") == "disconnect":
             cid = attrs.get("container", "")
-            name = sh("docker", "inspect", "-f", "{{.Name}}", cid).lstrip("/") if cid else ""
-            if name in (container, ""):
+            info = sh("docker", "inspect", "-f", "{{.Name}} {{.State.Running}}", cid) if cid else ""
+            name, _, running = info.lstrip("/").partition(" ")
+            # docker also detaches the network when a container exits normally; only a live detach is containment
+            if name == container and running == "true":
                 put(d.get("timeNano", time.time() * 1e9) / 1e9, "container", "disconnect",
                     {"container": container, "network": attrs.get("name", network)})
         if stop.is_set():

@@ -203,7 +203,11 @@ def record_hit(e, hit):
         rt["step_ids"].append(e["step_id"])
     inc["notes"].append(f"{e['id']} {rule_id}: {note}")
     if STAGE[rule_id] not in inc["chain"]:
-        inc["chain"].append(STAGE[rule_id])
+        # keep the chain in time order: an attempt that happened before containment goes before "contained"
+        if "contained" in inc["chain"] and parse_ts(e["ts"]) <= parse_ts(inc.get("contained_at", e["ts"])):
+            inc["chain"].insert(inc["chain"].index("contained"), STAGE[rule_id])
+        else:
+            inc["chain"].append(STAGE[rule_id])
 
     score = risk(sev, asset, conf)
     if score > inc["risk_score"]:
