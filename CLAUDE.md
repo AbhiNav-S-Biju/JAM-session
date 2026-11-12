@@ -63,6 +63,7 @@ All shared files live in `shared/`. Track A writes them, Track B reads them. Tra
 ```
 - `source: agent_step` events come from the agent's stdout (captured by `docker logs`, host-side), with `detail: {"action":"...","reason":"...","tainted":true|false}`.
 - `step_id` links system events to the agent step that caused them (intent-linked timeline).
+- Additive types (from A4): `agent_step/step_result` with `detail: {"ok":bool,"error":str|null}` (outcome of a step; failed tamper attempts show here), `file/dir_list`, `file/file_write`, `file/file_delete`, `container/start|exit|unpause`. `network/net_connect` detail is `{"src_ip","src_port","dst_ip","dst_port","proto"}`. Network capture is saved to `shared/runtime/capture.pcap`.
 
 **Alert/Incident** — `shared/runtime/incidents.json` (list):
 ```json
