@@ -80,6 +80,10 @@ All shared files live in `shared/`. Track A writes them, Track B reads them. Tra
 **Risk score**: `risk = round(100 * (severity/5) * (asset_value/5) * confidence)`, each of severity/asset_value in 1..5, confidence 0..1.
 
 **Evidence chain** — `shared/runtime/evidence/<incident_id>/chain.jsonl`: each line `{"seq":n,"ts":...,"record":{...},"prev_hash":"sha256:...","hash":"sha256:..."}` where `hash = sha256(prev_hash + canonical_json(record))`. Genesis `prev_hash` = 64 zeros. Print the final `chain_head` in the report.
+- Exact rule (implemented in `engine/evidence/vault.py`, A7): `hex_n = sha256((hex_{n-1} + canonical_json(record_n)).encode("utf-8")).hexdigest()`, using the hex WITHOUT the `sha256:` prefix; `hex_{-1}` = `"0"*64`; `canonical_json = json.dumps(record, sort_keys=True, separators=(",",":"), ensure_ascii=False)`. `seq` starts at 0 and must be consecutive.
+- Record `type`s: `incident_opened` (incident_id, run_id, first_event_ts, policy_sha256), `event` (`{"event": <full event>}`), `action` (one actions_taken entry), `file` (name, sha256, bytes of events.jsonl / capture.pcap), `incident_state` (status, severity, risk_score, chain, rules, time_to_detect_ms, time_to_contain_ms).
+- The chain is append-only (sealed after containment and again at run end). Incident `evidence` also has `chain`, `chain_length`. Each seal appends a line to `shared/runtime/anchors.log`.
+- Track B: `/api/verify/{id}` can just call `from engine.evidence.vault import verify_chain` -> `(ok, {"length","head","first_bad_seq","reason"})`. CLI: `python3 engine/evidence/vault.py verify|tamper-test <incident_id>`.
 
 **Policy** — `shared/policy.json`: allowed paths, restricted paths (dummy secrets), blocked/allowed destinations, asset values. Header shows its SHA-256.
 
