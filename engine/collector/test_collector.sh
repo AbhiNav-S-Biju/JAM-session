@@ -8,7 +8,7 @@ RUN="run-$MODE-$(date +%H%M%S)"
 cd "$ROOT"
 
 LOG="$(mktemp)"
-python3 engine/collector/collector.py --run-id "$RUN" --until-exit --rules engine.detect.rules:evaluate >"$LOG" 2>&1 &
+python3 engine/collector/collector.py --run-id "$RUN" --until-exit --rules engine.detect.rules:evaluate ${NO_RESPOND:+} $([ -z "${NO_RESPOND:-}" ] && echo --respond) >"$LOG" 2>&1 &
 CPID=$!
 for _ in $(seq 1 300); do grep -q "collector: ready" "$LOG" && break; sleep 0.2; done   # up to 60 s (first run builds an image)
 grep -q "collector: ready" "$LOG" || { echo "collector did not become ready"; cat "$LOG"; kill $CPID; exit 1; }
@@ -40,5 +40,10 @@ for i in items:
     print(f'INCIDENT {i["incident_id"]} severity={i["severity"]} risk={i["risk_score"]} factors={i["score_factors"]}')
     print("  chain:", " -> ".join(i["chain"]), f'| time_to_detect_ms={i["time_to_detect_ms"]}')
     for r in i["rules_triggered"]: print(f'  {r["rule_id"]} {r["name"]}: events={r["event_ids"]} steps={r["step_ids"]}')
+    print(f'  status={i["status"]} time_to_contain_ms={i["time_to_contain_ms"]} evidence={i["evidence"]}')
+    for act in i["actions_taken"]: print(f'  ACTION {act["action"]:<20} ok={act["ok"]} took={act["took_ms"]}ms {act["error"] or ""}')
 EOF
+echo "CONTAINER: $(docker inspect -f '{{.State.Status}} paused={{.State.Paused}} networks=[{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}]' cagewatch-agent 2>&1)"
+ls "$ROOT/shared/runtime/evidence/" 2>/dev/null | tail -1 | sed 's/^/EVIDENCE DIR: /'
+grep -h '"type": "\(pause\|disconnect\)"' "$ROOT/shared/runtime/events.jsonl" | cut -c1-140
 docker rm -f cagewatch-agent >/dev/null 2>&1 || true

@@ -18,6 +18,7 @@ import ipaddress
 import json
 import os
 import sys
+import threading
 import time
 from datetime import datetime, timezone
 
@@ -38,6 +39,7 @@ STAGE = {"R-FILE-001": "restricted_file_read", "R-NET-001": "blocked_destination
 _policy = None
 _state = {}
 _responder = None
+LOCK = threading.RLock()  # guards incident state shared with the responder thread (A6)
 _replay = False  # replay mode: detection time = event time
 
 
@@ -224,8 +226,9 @@ def record_hit(e, hit):
 def evaluate(event):
     """Collector hook. Returns the verdict for this event."""
     hits = match_rules(event)
-    for h in hits:
-        record_hit(event, h)
+    with LOCK:
+        for h in hits:
+            record_hit(event, h)
     if any(h[4] == "violation" for h in hits):
         return "violation"
     return "suspicious" if hits else "allow"

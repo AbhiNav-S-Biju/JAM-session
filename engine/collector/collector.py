@@ -207,8 +207,9 @@ def watch_container(container, until_exit):
         elif action in ("pause", "unpause", "die", "kill", "stop"):
             put(t, "container", action if action != "die" else "exit",
                 {"container": container, "exit_code": d.get("Actor", {}).get("Attributes", {}).get("exitCode")})
-            if action == "die" and until_exit:
-                time.sleep(FLUSH_DELAY + 0.5)
+            # A run ends when the agent exits, or when it is frozen by containment (a paused agent never exits).
+            if action in ("die", "pause") and until_exit:
+                time.sleep(FLUSH_DELAY + (2.5 if action == "pause" else 0.5))  # let disconnect events arrive
                 stop.set()
                 break
         if stop.is_set():
@@ -253,14 +254,21 @@ def main():
     ap.add_argument("--out", default=os.path.join(ROOT, "shared", "runtime"))
     ap.add_argument("--until-exit", action="store_true", help="stop when the agent container exits")
     ap.add_argument("--rules", help="module:function returning a verdict for each event")
+    ap.add_argument("--respond", action="store_true",
+                    help="auto-contain (pause, disconnect, revoke token, preserve evidence) when risk crosses the policy threshold")
     a = ap.parse_args()
 
     os.makedirs(a.out, exist_ok=True)
-    evaluate = None
+    sys.path.insert(0, ROOT)
+    evaluate, respond = None, None
     if a.rules:
         mod, fn = a.rules.split(":")
-        sys.path.insert(0, ROOT)
-        evaluate = getattr(importlib.import_module(mod), fn)
+        rules_mod = importlib.import_module(mod)
+        evaluate = getattr(rules_mod, fn)
+        if a.respond:
+            from engine.respond import respond
+            rules_mod.set_responder(respond.on_incident)
+            respond.issue_token(a.run_id)
 
     if not sh("docker", "network", "ls", "-q", "-f", f"name=^{a.network}$"):
         sh("docker", "network", "create", a.network)
@@ -294,6 +302,8 @@ def main():
     print(f"collector: run={a.run_id} bridge={bridge} subnet={subnet} -> {out_path}", flush=True)
     print("collector: ready", flush=True)
     n = writer(out_path, a.run_id, evaluate)
+    if respond:
+        respond.wait_all()  # do not exit while containment / evidence copy is still running
     subprocess.run(["docker", "rm", "-f", NETMON_NAME], capture_output=True)
     print(f"collector: wrote {n} events", flush=True)
 
