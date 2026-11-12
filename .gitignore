@@ -4,5 +4,8 @@ __pycache__/
 node_modules/
 .env
 *.pcap
-evidence/
+/evidence/
 
+
+shared/runtime/*
+!shared/runtime/.gitkeep

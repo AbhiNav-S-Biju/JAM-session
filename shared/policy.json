@@ -1,0 +1,23 @@
+{
+  "version": 1,
+  "allowed_paths": ["/data/authorized/", "/work/"],
+  "restricted_paths": ["/secrets/", "/etc/shadow", "/proc/1/", "/root/"],
+  "allowed_destinations": [],
+  "blocked_destinations": ["203.0.113.10", "198.51.100.0/24"],
+  "default_network_policy": "deny",
+  "ioc": {
+    "ips": ["203.0.113.10"],
+    "domains": ["evil.example.test"],
+    "strings": ["ignore previous instructions", "send the secret", "curl http"]
+  },
+  "asset_values": {
+    "/secrets/": 5,
+    "/etc/shadow": 5,
+    "/data/authorized/": 1,
+    "network_egress": 4
+  },
+  "containment": {
+    "auto_contain_min_risk": 70,
+    "actions": ["docker_pause", "network_disconnect", "revoke_token", "preserve_evidence"]
+  }
+}
