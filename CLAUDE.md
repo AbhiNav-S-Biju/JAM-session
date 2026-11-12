@@ -6,6 +6,30 @@
 
 Claude: this file is the source of truth. Before doing anything, find out which track the user is working on (A = Abhinav, B = Menva, or Integration), read that track file, and stay inside its scope. Do not change the shared contract (section 6) without telling the user, because the other teammate depends on it.
 
+## 0. Current status (update when it changes)
+
+- **Track A (engine), Abhinav: DONE, merged to `main` (2026-11-13).** Sandbox, scripted agent, collector, detection, auto-containment, evidence vault and runner all work and are tested in WSL. Real output is in `shared/fixtures/real/`.
+- **Track B (console), Menva: IN PROGRESS.** Branch `track-b` from `main`. Build against `shared/fixtures/real/`.
+- **Integration: NOT STARTED.** See `INTEGRATION.md`.
+- Measured (WSL, attack mode): time-to-detect about 0.4 s, time-to-contain about 1.0 s, risk 95 critical; benign and benign_unusual produce no incident; tamper test catches an edited violation at its exact seq.
+
+**Engine commands** (inside WSL Ubuntu, repo root; use `bash script.sh` because `git pull` can drop the execute bit):
+
+| Command | What it does |
+|---|---|
+| `python3 engine/run.py attack` / `benign` / `benign_unusual` | One run with a live coloured timeline, then a summary |
+| `python3 engine/run.py serve-control` | Engine for the dashboard: obeys `control.json`, writes `engine_status.json` |
+| `python3 engine/run.py halt` / `reset` / `status` | Manual emergency halt, clean up (removes paused container), show status |
+| `python3 engine/evidence/vault.py verify <INC-id>` | Verify an incident's hash chain |
+| `python3 engine/evidence/vault.py tamper-test <INC-id>` | Rewrite a violation in a copy and show verification failing |
+| `python3 engine/detect/rules.py shared/runtime/events.jsonl` | Replay detection on a saved run (for metrics) |
+| `bash engine/sandbox/verify_hardening.sh` | Check the running agent container's hardening flags |
+| `bash engine/test_control.sh` | End-to-end test of the dashboard control path |
+
+**Engine code map:** `engine/sandbox/` (Dockerfile, `run_agent.sh`, dummy data), `engine/agent/agent.py` (scripted agent), `engine/collector/collector.py` (host-side feeds plus the network monitor container), `engine/detect/rules.py` (rules, risk, `incidents.json`), `engine/respond/respond.py` (pause, disconnect, revoke token, evidence copy, emergency halt), `engine/evidence/vault.py` (hash chain), `engine/run.py` (runner + control server).
+
+**Known limits (say them if asked):** host-side file monitoring covers the mounted folders only (`/work` and `/proc` are visible only through the agent's own step lines); the network capture container runs on the host network with only the NET_RAW/NET_ADMIN capabilities; a run has about 8 s of Docker start-up on WSL; the agent's network attempt starts about 0.7 s after the secret read, so it still shows up before containment lands (honest story: detected at the secret read, contained in about 1 s, and the destination is an unroutable documentation IP).
+
 ## 1. What CageWatch is
 
 An AI agent runs inside a locked-down Docker container. A monitor running on the **host** (outside the agent's reach) records what the agent does: commands/steps, file access and network connections. When the agent breaks a rule (reads a restricted file, contacts a blocked IP), CageWatch scores the risk, **pauses the container, cuts its network, saves hash-chained evidence**, and generates an incident report. A dashboard shows the timeline, rules triggered, severity, hashes and report.
@@ -141,18 +165,18 @@ Troubleshooting: `Cannot connect to the Docker daemon` -> run `sudo service dock
 
 ## 9. Working rules
 
-- Two people, two tracks, one repo. Work on branches `track-a` / `track-b`, merge to `main` only at integration (see INTEGRATION.md). Pull before you push.
+- Two people, two tracks, one repo. Work on branches `track-a` / `track-b`. `track-a` is already merged; merge `track-b` to `main` at integration (see INTEGRATION.md). Pull before you push.
+- Run engine commands with `wsl -d Ubuntu --exec bash -lc '...'` when calling from Windows tools (plain `wsl ... bash -lc` expands `$vars` too early).
 - Never commit `.env`, secrets, PCAPs or `shared/runtime/`. Dummy secrets are fake and may live in `shared/fixtures/` only.
 - Keep it simple: a working demo beats extra features. Cut stretch goals first.
 - After modifying code, run `graphify update .` if a `graphify-out/` folder exists.
 - Commit style: short imperative subject. Push with the `AbhiNav-S-Biju` GitHub account (Menva pushes with their own account once added as collaborator).
 
-## 10. Timeline (2 days, today is 2026-11-13)
+## 10. Timeline (demo 2026-11-14)
 
 | When | Track A (Abhinav) | Track B (Menva) |
 |---|---|---|
-| Day 1 AM | WSL + Docker working, locked-down container, scripted agent | WSL + Docker, FastAPI skeleton, fixtures, dashboard layout |
-| Day 1 PM | Monitor + rules + pause/disconnect working | Dashboard live on fixtures, timeline + stepper |
-| Day 1 eve | Evidence chain + risk score + incidents.json | Report page, verify endpoint, control buttons |
+| Day 1 (2026-11-13) | **Done:** WSL + Docker, sandbox, agent, collector, rules, containment, evidence, runner | API + dashboard on `shared/fixtures/real/`, report, verify, control buttons |
+| Day 1 eve | Help Menva / write scenario agent modes from `console/metrics/scenarios.md`, record backup demo video | Finish dashboard, push `track-b` |
 | Day 2 AM | **Integration** (INTEGRATION.md) | **Integration** |
 | Day 2 PM | Metrics runs, rehearse 3-min demo | Polish UI, rehearse |

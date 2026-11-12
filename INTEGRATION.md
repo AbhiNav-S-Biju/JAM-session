@@ -4,17 +4,17 @@ Do this only after both tracks meet their **Definition of done** (see `TRACK_A_A
 
 ## 1. Merge (about 15 min)
 
+`track-a` (engine) is already merged into `main`. Only the console is left:
 ```
 git checkout main && git pull
-git merge track-a        # Abhinav's engine
 git merge track-b        # Menva's console
 git push origin main
 ```
-Both pull `main` afterwards. Contract files are the only shared surface, so conflicts should be limited to `README.md`/`.gitignore`.
+Both pull `main` afterwards. Contract files are the only shared surface, so conflicts should be limited to `README.md`/`.gitignore`/`CLAUDE.md`.
 
 ## 2. Wire up (about 1 hour)
 
-1. Abhinav: copy one real run into `shared/fixtures/real/` (events + incidents + evidence).
+1. Real engine output is already in `shared/fixtures/real/` (done by Track A).
 2. Menva: point the console at live data: `CAGEWATCH_DATA=shared/runtime`.
 3. Start (inside WSL, project root, venv active), in two terminals:
    - Terminal 1: `python engine/run.py serve-control`
