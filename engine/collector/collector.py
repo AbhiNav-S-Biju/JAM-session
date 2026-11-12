@@ -292,6 +292,8 @@ def main():
             from engine.respond import respond
             rules_mod.set_responder(respond.on_incident)
             respond.issue_token(a.run_id)
+            from engine.evidence import vault
+            respond.add_hook(vault.seal)  # first seal right after containment
 
     if not sh("docker", "network", "ls", "-q", "-f", f"name=^{a.network}$"):
         sh("docker", "network", "create", a.network)
@@ -328,6 +330,10 @@ def main():
     n = writer(out_path, a.run_id, evaluate)
     if respond:
         respond.wait_all()  # do not exit while containment / evidence copy is still running
+        inc = rules_mod.current_incident(a.run_id)
+        if inc:  # final seal: append events that arrived after containment (chain is append-only)
+            head, added = vault.seal(inc)
+            print(f"collector: sealed {inc['incident_id']} (+{added} records) head={head}", flush=True)
     subprocess.run(["docker", "rm", "-f", NETMON_NAME], capture_output=True)
     print(f"collector: wrote {n} events", flush=True)
 

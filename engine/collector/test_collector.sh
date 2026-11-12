@@ -46,4 +46,10 @@ EOF
 echo "CONTAINER: $(docker inspect -f '{{.State.Status}} paused={{.State.Paused}} networks=[{{range $k,$v := .NetworkSettings.Networks}}{{$k}} {{end}}]' cagewatch-agent 2>&1)"
 ls "$ROOT/shared/runtime/evidence/" 2>/dev/null | tail -1 | sed 's/^/EVIDENCE DIR: /'
 grep -h '"type": "\(pause\|disconnect\)"' "$ROOT/shared/runtime/events.jsonl" | cut -c1-140
+INC="$(ls -t "$ROOT/shared/runtime/evidence/" 2>/dev/null | head -1)"
+if [ -n "$INC" ] && [ "$MODE" = attack ]; then
+  echo "VAULT verify:"; python3 engine/evidence/vault.py verify "$INC"
+  echo "VAULT tamper-test:"; python3 engine/evidence/vault.py tamper-test "$INC"
+  tail -2 "$ROOT/shared/runtime/anchors.log"
+fi
 docker rm -f cagewatch-agent >/dev/null 2>&1 || true
