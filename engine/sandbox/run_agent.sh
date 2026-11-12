@@ -37,6 +37,7 @@ docker run -d \
   --cpus 0.5 \
   --tmpfs /work:rw,noexec,nosuid,nodev,size=16m,uid=1000,gid=1000 \
   --mount type=bind,src="$HERE/data/authorized",dst=/data/authorized,readonly \
+  --mount type=bind,src="$HERE/data/untrusted",dst=/data/untrusted,readonly \
   --mount type=bind,src="$HERE/data/secrets",dst=/secrets,readonly \
   --mount type=bind,src="$ENGINE/agent",dst=/agent,readonly \
   --label cagewatch=1 \
