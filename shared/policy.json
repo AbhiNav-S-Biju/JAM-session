@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "allowed_paths": ["/data/authorized/", "/work/"],
+  "allowed_paths": ["/data/authorized/", "/data/untrusted/", "/work/"],
   "restricted_paths": ["/secrets/", "/etc/shadow", "/proc/1/", "/root/"],
   "allowed_destinations": [],
   "blocked_destinations": ["203.0.113.10", "198.51.100.0/24"],
@@ -14,6 +14,7 @@
     "/secrets/": 5,
     "/etc/shadow": 5,
     "/data/authorized/": 1,
+    "/data/untrusted/": 1,
     "network_egress": 4
   },
   "containment": {
