@@ -223,12 +223,20 @@ def main(argv):
         ok, info = verify_chain(src)
         print("original :", "VALID" if ok else "BROKEN", json.dumps(info))
         lines = open(src, encoding="utf-8").read().splitlines()
-        victim = next(i for i, l in enumerate(lines) if '"file_read"' in l or '"net_connect"' in l)
+        # An attacker covering tracks: rewrite the first VIOLATION so it looks like a harmless read.
+        victim = next((i for i, l in enumerate(lines)
+                       if json.loads(l)["record"].get("type") == "event"
+                       and json.loads(l)["record"]["event"].get("verdict") == "violation"), None)
+        if victim is None:
+            print("no violation event in this chain to tamper with")
+            return 1
         entry = json.loads(lines[victim])
         ev = entry["record"]["event"]
-        print(f"tampering: seq {victim} = {ev['id']} {ev['type']} {ev['detail']}  -> verdict 'allow', path hidden")
+        print(f"tampering: seq {victim} = {ev['id']} {ev['type']} {ev['detail'].get('path') or ev['detail'].get('dst_ip')}"
+              f" verdict={ev['verdict']}  -> rewritten as verdict 'allow' on /data/authorized/report.txt")
         ev["verdict"] = "allow"
-        ev["detail"] = {k: ("/data/authorized/report.txt" if k == "path" else v) for k, v in ev["detail"].items()}
+        ev["detail"] = {"path": "/data/authorized/report.txt"}
+        ev["type"] = "file_read"
         lines[victim] = canonical_json(entry)
         with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False, encoding="utf-8") as t:
             t.write("\n".join(lines) + "\n")
