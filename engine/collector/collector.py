@@ -41,7 +41,7 @@ MOUNTS = {
 }
 NETMON_IMAGE = "cagewatch-netmon:latest"
 NETMON_NAME = "cagewatch-netmon"
-FLUSH_DELAY = 0.8  # seconds to hold events so they can be ordered by timestamp
+FLUSH_DELAY = 0.4  # seconds to hold events so they can be ordered by timestamp
 
 q = queue.Queue()
 stop = threading.Event()
