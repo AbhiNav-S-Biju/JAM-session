@@ -37,7 +37,7 @@ One engine does all detection. The demo and the report are read-only views of it
 | Person | Files | Status |
 |---|---|---|
 | 1 (Jeev) | `contracts.py`, `model.py`, `policies.py`, `reach.py`, `sim_traffic.py`, scenario tests | **[built]** |
-| 2 | `outbound.py`, `alerts.py` | **[spec]** |
+| 2 | `outbound.py`, `alerts.py` | **[built]** |
 | 3 | `report.py`, `main.py`, `demo/index.html`, README | **[spec]** |
 
 ---
