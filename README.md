@@ -24,12 +24,25 @@ pip install -r requirements.txt
 pytest -q
 ```
 
-## Run (once all modules are merged)
+## Run
 
 ```
 python -m src.main scenarios/home.yaml --out out/
 ```
-Then double-click `demo/index.html`.
+This runs every case under every policy, prints the before-and-after table and the expected-result
+checks (exit code 1 if any `expect:` value fails), and writes:
+
+| File | What it is |
+|---|---|
+| `out/results.json` | everything, in the shape documented at the top of `src/report.py` |
+| `out/results.csv` | one row per case and policy |
+| `out/report.md` | before-and-after table, alerts, expected-result checks |
+| `out/before_after.html` | static before/after maps for every case |
+| `demo/results.js` | the same results as one line, `window.RESULTS = {...};` |
+
+Then double-click `demo/index.html` (no server needed). Pick a scenario, a policy, or flip the
+default-deny toggle; it shows the same numbers as `out/report.md`. Options: `--policies`,
+`--thresholds` (other config files) and `--demo` (where to write `results.js`).
 
 ## Repo map
 
