@@ -10,10 +10,11 @@ from __future__ import annotations
 
 import ipaddress
 import platform
+import re
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 
-from .ingest import InputError, parse_arp
+from .ingest import InputError, norm_mac, parse_arp
 
 PRIVATE = [ipaddress.ip_network(n) for n in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16")]
 MAX_HOSTS = 1024   # /22
@@ -59,8 +60,40 @@ def read_arp_table(runner=subprocess.run) -> list[dict]:
     return parse_arp(r.stdout or "", "live `arp -a`")
 
 
+_MAC = re.compile(r"Physical Address[ .]*:\s*([0-9A-Fa-f]{2}(?:-[0-9A-Fa-f]{2}){5})")
+_IP4 = re.compile(r"IPv4 Address[ .]*:\s*(\d{1,3}(?:\.\d{1,3}){3})")
+
+
+def own_entry(net: ipaddress.IPv4Network, runner=subprocess.run, system: str | None = None) -> dict | None:
+    """This computer's own address on the subnet, from `ipconfig /all` (Windows only, local, no network).
+
+    A computer never lists itself in its own ARP table, so the scan would otherwise miss it.
+    """
+    if (system or platform.system()) != "Windows":
+        return None
+    try:
+        out = runner(["ipconfig", "/all"], capture_output=True, text=True, timeout=15).stdout or ""
+    except (subprocess.TimeoutExpired, OSError):
+        return None
+    mac = None
+    for line in out.splitlines():
+        if line and not line[0].isspace():       # a new adapter section starts
+            mac = None
+        m = _MAC.search(line)
+        if m:
+            mac = m.group(1)
+        i = _IP4.search(line)
+        if i and mac and ipaddress.ip_address(i.group(1)) in net:
+            return {"ip": i.group(1), "mac": norm_mac(mac)}
+    return None
+
+
 def discover(subnet: str, runner=subprocess.run) -> list[dict]:
-    """Ping the subnet once, then read the ARP table, keeping only addresses inside the subnet."""
+    """Ping the subnet once, read the ARP table, and add this computer. Only addresses inside the subnet."""
     net = validate_subnet(subnet)
     sweep(net, runner)
-    return [e for e in read_arp_table(runner) if ipaddress.ip_address(e["ip"]) in net]
+    rows = [e for e in read_arp_table(runner) if ipaddress.ip_address(e["ip"]) in net]
+    me = own_entry(net, runner)
+    if me and me["mac"] not in {r["mac"] for r in rows}:
+        rows.append(me)
+    return rows

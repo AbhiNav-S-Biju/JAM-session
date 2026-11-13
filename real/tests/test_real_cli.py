@@ -274,3 +274,42 @@ def test_templates_are_never_overwritten(tmp_path, monkeypatch):
                     "--input", str(inp), "--out", str(tmp_path / "o")])
     assert "MY-EDIT" in (inp / "names.template.csv").read_text()
     assert (inp / "zones.template.yaml").read_text() == "# my edit\n"
+
+
+IPCONFIG = """Windows IP Configuration
+
+Ethernet adapter vEthernet (WSL):
+
+   Physical Address. . . . . . . . . : 00-15-5D-AA-BB-CC
+   IPv4 Address. . . . . . . . . . . : 172.24.16.1(Preferred)
+
+Wireless LAN adapter Wi-Fi:
+
+   Description . . . . . . . . . . . : Fake Wi-Fi Card
+   Physical Address. . . . . . . . . : AA-BB-CC-11-22-33
+   IPv4 Address. . . . . . . . . . . : 192.168.0.106(Preferred)
+   Default Gateway . . . . . . . . . : 192.168.0.1
+"""
+
+
+class _Out:
+    returncode, stdout = 0, IPCONFIG
+
+
+def test_own_entry_finds_this_computer_on_the_subnet_only():
+    net = discover.validate_subnet("192.168.0.0/24")
+    assert discover.own_entry(net, runner=lambda *a, **k: _Out, system="Windows") == \
+        {"ip": "192.168.0.106", "mac": "aa:bb:cc:11:22:33"}        # not the 172.24.x virtual adapter
+    assert discover.own_entry(net, runner=lambda *a, **k: _Out, system="Linux") is None
+    other = discover.validate_subnet("10.0.0.0/24")
+    assert discover.own_entry(other, runner=lambda *a, **k: _Out, system="Windows") is None
+
+
+def test_discover_adds_this_computer_once(monkeypatch):
+    monkeypatch.setattr(discover, "own_entry", lambda net, runner=None: {"ip": "192.168.0.106", "mac": "aa:bb:cc:11:22:33"})
+
+    class R:
+        returncode = 0
+        stdout = "  192.168.0.101  aa-bb-cc-00-00-02  dynamic\n"
+    rows = discover.discover("192.168.0.0/24", runner=lambda *a, **k: R)
+    assert sorted(r["ip"] for r in rows) == ["192.168.0.101", "192.168.0.106"]
