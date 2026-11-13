@@ -1,3 +1,0 @@
-Quarterly numbers (authorized document)
-revenue: 1200
-costs: 800

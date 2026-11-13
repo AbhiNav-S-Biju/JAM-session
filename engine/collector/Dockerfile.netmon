@@ -1,4 +1,0 @@
-# CageWatch network monitor: tcpdump on the HOST network namespace (outside the agent's container).
-# Started by collector.py with --net=host and only NET_RAW/NET_ADMIN capabilities, so no sudo is needed.
-FROM alpine:3.20
-RUN apk add --no-cache tcpdump

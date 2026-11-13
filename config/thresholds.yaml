@@ -1,0 +1,4 @@
+# Detection thresholds. Code reads these; never hardcode them in Python.
+outbound_mb_limit: 10      # laptop delivered MB above this -> outbound_over_limit
+beacon_min_count: 5        # this many flows to one destination ...
+beacon_window_s: 300       # ... inside this many seconds -> beaconing

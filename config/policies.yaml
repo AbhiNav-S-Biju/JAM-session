@@ -1,0 +1,18 @@
+# Policy definitions. apply_policy() reads these; the rule names below are the
+# only vocabulary it understands. Edges are (src, dst) pairs; dst may be a host.
+#
+# Rule vocabulary:
+#   all_pairs             every device -> every other device, and every device -> every host
+#   same_zone             device -> device when both are in the same zone
+#   device_to_known_host  any device -> any host with known: true
+#   baseline_only         only the pairs listed in the scenario's baseline
+policies:
+  flat:
+    description: Everything on one network, no segmentation.
+    rules: [all_pairs]
+  vlan_only:
+    description: Zones separate devices, but traffic inside a zone is open.
+    rules: [same_zone, device_to_known_host]
+  vlan_deny:
+    description: Default-deny. Only the baseline pairs are allowed.
+    rules: [baseline_only]
