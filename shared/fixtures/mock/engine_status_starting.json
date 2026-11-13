@@ -1,0 +1,9 @@
+{
+  "state": "running",
+  "mode": "attack",
+  "run_id": "run-attack-20261113-090000",
+  "incident_id": null,
+  "message": "starting sandbox",
+  "last_cmd": "run_attack",
+  "updated_at": "2026-11-13T09:00:00.000Z"
+}

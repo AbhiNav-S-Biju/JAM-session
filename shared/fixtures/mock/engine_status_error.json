@@ -1,0 +1,9 @@
+{
+  "state": "error",
+  "mode": "attack",
+  "run_id": "run-attack-20261113-090000",
+  "incident_id": null,
+  "message": "docker: Cannot connect to the Docker daemon",
+  "last_cmd": "run_attack",
+  "updated_at": "2026-11-13T09:00:00.000Z"
+}

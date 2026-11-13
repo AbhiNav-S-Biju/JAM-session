@@ -1,0 +1,9 @@
+{
+  "state": "idle",
+  "mode": null,
+  "run_id": null,
+  "incident_id": null,
+  "message": "waiting for a command",
+  "last_cmd": null,
+  "updated_at": "2026-11-13T09:00:00.000Z"
+}
