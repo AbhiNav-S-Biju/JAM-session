@@ -6,3 +6,6 @@ __pycache__/
 .mcp.json
 out/
 demo/results.js
+real/input/
+real/out/
+real/out_test/

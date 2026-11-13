@@ -1,9 +1,9 @@
 # Tech Guide: how the simulator works and the concepts behind it
 
-Audience: all three of us, before the mock interview. Each section ends with "Say it in one breath" so you can answer out loud.
+Audience: all three of us, before the mock interview. Sections 1 to 19 explain the concepts; section 20 maps every file; sections 21 and 22 add questions and glossary for the real-network viewer and the 3D sim. Each section ends with "Say it in one breath" so you can answer out loud.
 Code you can open while reading: `src/` (modules), `config/` (policies, thresholds), `scenarios/home.yaml` (the demo home and the hand-written answers), `tests/`.
 
-Status marker used below: **[built]** = merged and tested. **[spec]** = designed in `docs/TEAM_PLAN.md`, not built yet. Update these markers as modules land.
+Status marker used below: **[built]** = merged and tested. Everything in the plan is built. Beyond the plan we also built the real-network viewer (`real/`) and a 3D sim (`iot/`); section 20 is a file-by-file map of all of it.
 
 ---
 
@@ -38,7 +38,7 @@ One engine does all detection. The demo and the report are read-only views of it
 |---|---|---|
 | 1 (Jeev) | `contracts.py`, `model.py`, `policies.py`, `reach.py`, `sim_traffic.py`, scenario tests | **[built]** |
 | 2 | `outbound.py`, `alerts.py` | **[built]** |
-| 3 | `report.py`, `main.py`, `demo/index.html`, README | **[spec]** |
+| 3 | `report.py`, `main.py`, `demo/index.html`, README | **[built]** |
 
 ---
 
@@ -205,6 +205,7 @@ Our honest positioning: **an educational what-if simulator**. It teaches and vis
 - **SVG drawing**: SVG is XML for vector graphics, drawn in the browser. `<rect>` for zones, `<circle>` for devices, `<line>` for allowed or blocked connections, `<text>` for labels. Coordinates come from `x`/`y` in `home.yaml`, so the demo never carries its own layout.
 - **Reading a generated JavaScript data file**: `report.py` writes `demo/results.js` containing one line, `window.RESULTS = {...};`. `index.html` loads it with `<script src="results.js">`. Why not `fetch('results.json')`? Browsers block `fetch` of local files when you double-click an HTML file (file:// origin), so a script tag is the trick that works with no server.
 - **Animation timing**: use CSS transitions/animations or `setTimeout`/`requestAnimationFrame` to reveal the attacker's spread hop by hop (the BFS hops), e.g. step n lights up devices at distance n after `n * delay` ms. Keep delays in one constant, and make the end state match the numbers in `out/report.md`.
+- **3D**: `iot/index.html` uses three.js (scene, camera, renderer, meshes, an orbit camera). The same BFS tree drives the hop-by-hop animation; see section 20.3.
 - Rule: the demo draws **only** what `results.js` contains. No hardcoded names, numbers or positions.
 
 ---
@@ -237,3 +238,124 @@ Headline: **7 to 2 to 1**.
 ## 19. Glossary
 
 **Allow list**: permitted pairs. **Baseline**: normal traffic. **Beaconing**: regular small check-ins to one destination. **Blast radius**: devices reachable from a compromised one. **BFS**: breadth-first search. **Default-deny**: block everything not explicitly allowed. **Edge**: allowed `(src, dst)` connection. **Exfiltration**: data leaving the network. **Flat network**: no segmentation. **Foothold**: the first compromised device. **Host**: an outside destination. **IoT**: internet-connected gadget. **Lateral movement**: attacker hopping device to device. **Oracle**: hand-written expected results. **Subnet**: a block of IP addresses. **VLAN**: logical network split on shared hardware. **Zone**: group of devices with the same trust level.
+
+---
+
+## 20. Every file: what it does and how
+
+Run everything from the repo root. `pytest -q` runs all tests (about 170).
+
+### 20.1 Engine (simulated home)
+
+| File | Owner | What it does | How, in one line |
+|---|---|---|---|
+| `scenarios/home.yaml` | P1 | The demo home plus the hand-written expected answers | zones, 8 devices, 4 hosts, baseline pairs, 3 cases with `expect:` |
+| `config/policies.yaml` | P1 | The three policies as lists of rule names | `flat`, `vlan_only`, `vlan_deny` |
+| `config/thresholds.yaml` | P1 | Detection limits | 10 MB, 5 flows, 300 s |
+| `src/contracts.py` | P1 | Frozen dataclasses everyone shares | `Zone, Device, Host, Flow, Case, Scenario, Alert, ReachResult` |
+| `src/model.py` | P1 | Load and validate YAML | builds the dataclasses, raises `ValueError` naming a bad reference |
+| `src/policies.py` | P1 | Policy name to allowed edges | union of rule functions in a dict `RULES` |
+| `src/reach.py` | P1 | Blast radius | BFS with a `seen` set over device-to-device edges |
+| `src/sim_traffic.py` | P1 | Deterministic traffic | `random.Random(seed)`, optional `jitter_s` |
+| `src/alerts.py` | P2 | Baseline alerts | `unlisted_flow`, `beaconing` (sliding window) |
+| `src/outbound.py` | P2 | Laptop checks | `outbound_unlisted`, `outbound_over_limit`, `delivered_mb` |
+| `src/main.py` | P3 | CLI and result builder | runs every case under every policy, checks `expect:` |
+| `src/report.py` | P3 | Writers | JSON, CSV, Markdown, static HTML, `demo/results.js` |
+| `demo/index.html` | P3 | 2D interactive map | draws only `window.RESULTS` |
+| `tests/` | all | One test file per module, plus the oracle | `test_scenarios.py` checks every `expect:` block |
+
+#### How the Person 2 modules work (`src/alerts.py`, `src/outbound.py`)
+- **Beaconing as a sliding window.** Collect the times of flows from one source to one destination, sorted. If any run of `beacon_min_count` consecutive flows spans at most `beacon_window_s` seconds, that is beaconing:
+  ```python
+  for i in range(len(ts) - min_count + 1):
+      if ts[i + min_count - 1] - ts[i] <= window_s:   # first..last in the window
+          alert; break                                 # one alert per (src, dst)
+  ```
+  Our beacon case is flows at t = 0, 60, 120, 180, 240: five flows spanning 240 s, which is inside 300 s.
+- **`unlisted_flow`** needs two things: the pair is not in the baseline, and the destination host has `known: false`. Requiring both is how we keep false positives down.
+- **The laptop is found by data, not by name**: `_laptops()` returns devices whose `type == "laptop"`. Renaming the laptop in YAML changes nothing in the code.
+- **Delivered versus attempted.** `delivered_mb` counts only flows whose `(src, dst)` is in the policy's edges. `outbound_unlisted` fires on attempts (even blocked); `outbound_over_limit` fires only when delivered bytes are strictly greater than the limit.
+- **Units:** 1 MB = 1,000,000 bytes, so 48,000,000 bytes is 48.0 MB.
+
+#### How the Person 3 modules work (`src/main.py`, `src/report.py`, `demo/`)
+- `build_results()` is the whole pipeline: load scenario, thresholds and policies; for each case call `with_case`, then for each policy call `run_policy`, which computes edges, blast radius, alerts, laptop MB and a `delivered` flag per flow. Then `check()` compares each `expect:` value with the result. Exit code is 1 if any expected value fails.
+- `reach_tree()` builds one shortest-path tree for drawing only. The numbers come from `reach.blast_radius`, not from the tree, so the drawing cannot change a result.
+- `report.write_all()` writes `out/results.json`, `results.csv`, `report.md`, `before_after.html` and `demo/results.js`. `results_js()` escapes `</` so a device name can never close the script tag.
+- `demo/index.html` reads `window.RESULTS` and draws SVG: zones as rects, devices as circles, hosts as squares, flows as lines (dashed with an X if blocked). Policy and scenario chips just change which entry of `results` is drawn.
+
+### 20.2 The real-network viewer (`real/`)
+
+Goal: the same engine, on the devices in your own house. It reuses `src/` unchanged by building a `Scenario` from real files and calling the same `run_policy`.
+
+```
+router_devices.csv ┐
+arp.txt            ├─ ingest.py ─ build.merge_devices (by MAC) ─ build.assemble ─ src.main.run_policy ─ output.py
+router_traffic.csv ┤                  ^ names.csv (ip,name)        ^ zones.yaml (zones, foothold, allowed pairs)
+live discovery     ┘ (discover.py, opt-in)
+```
+
+| File | What it does |
+|---|---|
+| `real/ingest.py` | Reads the files. CSV columns matched **by header name** (with aliases), `arp -a` in Windows and macOS/Linux formats, `zones.yaml`, `names.csv`. Every problem raises `InputError` naming the file. Nothing is guessed. |
+| `real/discover.py` | Opt-in live discovery: one ping per address in a private subnet, then `arp -a`. Refuses non-private ranges and anything bigger than /22. No port scanning. |
+| `real/build.py` | Merges devices by MAC, assigns zones from `zones.yaml`, resolves traffic destinations to a device or an outside host, builds the `Scenario`, runs every policy, returns the same `results` shape as the simulator. |
+| `real/layout.py` | Computes map positions (grid) unless `zones.yaml` gives them. |
+| `real/attack.py` | The attack demo: `[SIMULATED]` cases (takeover, exfiltration, beaconing) sized from the thresholds, plus an optional one-off harmless test upload to a server you control. |
+| `real/enforce.py` | Router control: today a dry-run plan only; `--enforce apply` is refused until a router adapter exists. `--router archer-c6` adds by-hand steps and states what that router cannot do. |
+| `real/output.py` | Writes `devices.json`, `connections.json`, `report.md`, `map.html` (a copy of `demo/index.html` with the data inlined), `results.js`. |
+| `real/main.py` | The CLI. `--quick` = live discovery with no other files needed. |
+| `real/index.html` | The launcher with cards for the demo, the real map and the 3D sim. |
+| `real/tests/` | 50+ tests on fake fixtures. Blast-radius expectations (7 / 2 / 1) were worked out by hand before the code ran. |
+
+Concepts used here:
+- **MAC address**: a device's hardware address on the local network, e.g. `aa:bb:cc:00:00:03`. We merge router and ARP records by MAC because names and IPs change. **Many phones use a randomised ("private") MAC per Wi-Fi network**, so MAC identity is not perfect.
+- **ARP table**: your computer's cache of "which MAC has which IP" for devices it has talked to. `arp -a` prints it. It has no names, and it never lists the computer itself.
+- **Why one ping per address**: it makes the OS fill its ARP table. We then read the table. We do not scan ports or probe services.
+- **Masking**: MACs are shown as `xx:xx:xx:00:00:03` (last 3 octets) everywhere unless `--show-mac`. The first 3 octets identify the manufacturer, and the full MAC is a persistent identifier worth protecting.
+- **Honesty limits**: blast radius uses the zones and allowed pairs *you declare*. It does not read the router's real firewall rules. Links on the map come only from `router_traffic.csv`; consumer routers often log device-to-internet traffic only.
+- **The Archer C6 reality**: no VLANs or per-pair rules, so `vlan_only` and `vlan_deny` cannot be enforced on it. It can block a whole device and has a guest network. The tool says so in the plan.
+- **Safety rules in code**: network features need `--i-own-this-network`; subnet validation; test upload capped at 50 MB of dummy text; no passwords or Wi-Fi names are asked for or stored; a test fails if a default run opens any socket.
+
+### 20.3 The 3D sim (`iot/`)
+
+| File | What it does |
+|---|---|
+| `iot/index.html` | One page: three.js scene plus a side panel. Reads `window.RESULTS` from `../demo/results.js`, or `../real/out/results.js` with `?data=real`. |
+| `iot/vendor/` | three.js r128 and OrbitControls, vendored so it works offline. MIT licensed; hashes in `README.txt`. |
+
+How it works:
+- **three.js basics**: a *scene* holds objects; a *camera* looks at it; a *renderer* draws it to a `<canvas>` every frame (`requestAnimationFrame`). A *mesh* = geometry (shape) + material (look). *OrbitControls* give drag-to-rotate and scroll-to-zoom.
+- **Mapping 2D to 3D**: the 2D `x, y` become world `X, Z` on the floor, scaled so the home is about 26 units wide. Height is `Y`.
+- **Zones** are floor slabs with transparent "glass" walls. Wall colour and opacity come from how strict the selected policy is: its position in `policies[]` (first = open/none, middle = amber, last = green). So default-deny visibly "locks" the rooms, with no policy names hardcoded.
+- **Devices** are small meshes chosen by `type` (laptop, camera, NVR...), unknown types are a polyhedron. Critical devices get a gold ring. Labels are canvas-drawn sprites that always face the camera.
+- **The attack animation reuses the BFS.** `reach_edges` is a BFS tree; a node's depth is its parent's depth plus 1. A timeline lights each node at `depth × 900 ms` and draws the edge with a travelling pulse. That is the hop-by-hop spread.
+- **Blocked flows** draw as dashed grey arcs with a red X; delivered flows are red arcs with looping pulses.
+- **Phase-2 hub** is a labelled concept: a box with dashed beams to every zone. It is not a working product and the page says so.
+- **Accessibility and honesty**: respects `prefers-reduced-motion` (skips animation), buttons carry `aria-pressed`, a hidden live region announces the result as text, and the badge says SIMULATED or YOUR NETWORK.
+
+### 20.4 Cheat sheet
+
+```
+python -m src.main scenarios/home.yaml --out out/                       # simulated home: out/ + demo/results.js
+python -m real.main --input real/tests/fixtures --out real/out_test      # fake data through the real pipeline
+python -m real.main --quick --subnet 192.168.0.0/24 --i-own-this-network # your own network (names: real/input/names.csv)
+python -m real.main ... --attack-demo --enforce plan --router archer-c6   # simulated attacks + router plan
+python -m pytest -q                                                       # everything
+```
+Then open `real/index.html`.
+
+## 21. More questions you might get
+
+12. *What is a MAC address, and why not just use IPs?* A MAC is the device's hardware address; IPs are handed out by the router and change. Merging by MAC keeps identity stable (with the randomised-MAC caveat).
+13. *Does your tool scan my network?* Only if you pass `--live-discover` or `--quick` with `--i-own-this-network`. It pings each address once in a private range you name, then reads the ARP table. It never scans ports, probes services or logs into anything.
+14. *Can it block a device on my router?* Not automatically. It writes a plan and the click-by-click steps for an Archer C6; a consumer router like that has no documented API, and automating it would mean handling the router password.
+15. *Why can't an Archer C6 enforce your three policies?* No VLANs and no per-pair rules. It can block a device and separate a guest network. Full segmentation needs VLAN-capable gear (OpenWrt, Omada, Firewalla).
+16. *How would this scale?* An always-on hub on the network that sees flows, identifies devices and applies per-device rules (see section 12). The 3D page's hub is a concept drawing, not a product.
+17. *How do you know the real-network numbers are right?* They come from the same engine, and the fixture tests use blast-radius values worked out by hand before running the code. The real numbers depend on the zones and allowed pairs you declared.
+18. *Why does the 3D page need no internet?* three.js is vendored under `iot/vendor/`, and data comes through a `<script>` tag, which works from a double-click.
+19. *Why does the 3D animation go hop by hop?* Hop depth is the BFS depth: devices one hop from the compromised one light first, then the next ring.
+20. *What did you do for privacy?* MACs masked by default, nothing uploaded, no Wi-Fi names or passwords handled, private-range-only discovery, and the personal data folder `real/input/` and outputs are in `.gitignore`.
+
+## 22. Added glossary
+
+**ARP**: protocol and cache mapping IPs to MACs on the local network. **DHCP**: how the router hands out IPs; they can change. **MAC (randomised)**: a per-network fake MAC many phones use for privacy. **SSID**: the Wi-Fi network's name. **Gateway**: the router address, often `x.x.x.1`. **Mesh / scene / sprite (three.js)**: a shape, the world, and a flat image that always faces the camera. **requestAnimationFrame**: the browser callback that runs once per screen refresh. **Vendored**: a third-party library copied into the repo so it works offline. **Foothold (real)**: the device you pretend is compromised, set in `zones.yaml` or `--foothold`.

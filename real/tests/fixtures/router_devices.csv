@@ -1,0 +1,7 @@
+mac,name,vendor,ip,status
+aa:bb:cc:00:00:01,Laptop,Acme,192.168.50.10,connected
+aa:bb:cc:00:00:02,Phone,Acme,192.168.50.11,connected
+aa:bb:cc:00:00:03,Camera,CamCo,192.168.50.20,connected
+aa:bb:cc:00:00:04,Doorbell,CamCo,192.168.50.21,connected
+aa:bb:cc:00:00:05,NVR,CamCo,192.168.50.22,connected
+aa:bb:cc:00:00:06,Fridge,CoolCo,192.168.50.30,connected

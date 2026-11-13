@@ -1,0 +1,16 @@
+# Fake data for tests. Positions are omitted on purpose: the layout is computed.
+foothold: Camera
+devices:
+  Laptop:   {zone: Trusted, type: laptop, critical: true}
+  Phone:    {zone: Trusted}
+  Camera:   {zone: Cameras}
+  Doorbell: {zone: Cameras}
+  NVR:      {zone: Cameras, critical: true}
+  Fridge:   {zone: IoT}
+allowed:
+  - [Laptop, weather.example]
+  - [Phone, weather.example]
+  - [Camera, NVR]
+  - [Doorbell, NVR]
+  - [Fridge, cloud.example]
+known_hosts: [weather.example, cloud.example]

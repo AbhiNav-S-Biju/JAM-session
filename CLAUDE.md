@@ -56,7 +56,13 @@ tests/                   one test file per module, plus test_scenarios.py and te
 demo/index.html          draws only what demo/results.js contains
 out/                     generated, never committed
 docs/TEAM_PLAN.md        the plan and the full spec
+docs/TECH_GUIDE.md       concepts plus a file-by-file map (section 20)
+docs/FRONTEND_HANDOFF.md for whoever owns the UI: data contract, what to touch, polish list
+real/                    real-network viewer and attack demo for the owner's own home (Person 1). Opt-in network features need --i-own-this-network. Never commit real/input/ or real/out/
+iot/                     3D sim page (three.js, vendored in iot/vendor/, do not edit). Reads window.RESULTS
 ```
+
+Extra rules for `real/` and `iot/`: never ask for or store Wi-Fi names, passwords or router logins; MAC addresses stay masked in outputs unless `--show-mac`; anything that touches the network stays opt-in; the UI draws only what `window.RESULTS` contains.
 
 Setup: `python -m venv .venv`, activate, `pip install -r requirements.txt`, then `pytest -q`.
 Run: `python -m src.main scenarios/home.yaml --out out/`.

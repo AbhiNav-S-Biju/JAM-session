@@ -1,0 +1,7 @@
+source,destination,bytes,time
+Laptop,weather.example,2000,2026-11-13T10:00:00
+Camera,NVR,500000,2026-11-13T10:00:05
+Doorbell,NVR,400000,2026-11-13T10:00:06
+Camera,198.51.100.7,64,2026-11-13T10:00:10
+Fridge,cloud.example,1200,2026-11-13T10:00:20
+Ghost,weather.example,10,2026-11-13T10:00:30

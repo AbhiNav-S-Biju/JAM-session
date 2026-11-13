@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Home Network: Demo or Real</title>
+<style>
+  :root { --bg:#f7f8fb; --card:#fff; --ink:#14171f; --mute:#5d6475; --line:#dde1ea; --accent:#3d5afe; --ok:#0a7a2f; --sim:#b25e00; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f1218; --card:#171b24; --ink:#e8ebf2; --mute:#97a0b3;
+    --line:#2a3040; --accent:#7c8cff; --ok:#4cc27a; --sim:#f0a64a; } }
+  * { box-sizing:border-box; }
+  body { margin:0; font:16px/1.5 system-ui,"Segoe UI",Roboto,Arial,sans-serif; background:var(--bg); color:var(--ink); }
+  main { max-width:880px; margin:0 auto; padding:28px 16px; }
+  h1 { margin:0 0 4px; font-size:26px; } p.sub { margin:0 0 20px; color:var(--mute); }
+  .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
+  @media (max-width:820px) { .grid { grid-template-columns:1fr; } }
+  a.card { display:block; text-decoration:none; color:inherit; background:var(--card); border:1px solid var(--line);
+           border-radius:12px; padding:20px; }
+  a.card:hover, a.card:focus-visible { border-color:var(--accent); outline:none; }
+  .tag { display:inline-block; font-size:12px; font-weight:700; letter-spacing:.06em; padding:2px 8px; border-radius:999px;
+         border:1px solid currentColor; margin-bottom:10px; }
+  .sim { color:var(--sim); } .real { color:var(--ok); }
+  h2 { margin:0 0 6px; font-size:20px; } p { margin:0 0 8px; } .go { color:var(--accent); font-weight:600; }
+  code { font-family:Consolas,monospace; font-size:13px; }
+  .note { margin-top:22px; color:var(--mute); font-size:14px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Home network blast radius</h1>
+  <p class="sub">Two views of the same engine.</p>
+  <div class="grid">
+    <a class="card" href="../demo/index.html">
+      <span class="tag sim">SIMULATED</span>
+      <h2>The demo</h2>
+      <p>A made-up home: camera, laptop, fridge and more. Pick a scenario, flip default-deny, see the blast radius shrink.</p>
+      <span class="go">Open the demo &rarr;</span>
+    </a>
+    <a class="card" href="out/map.html">
+      <span class="tag real">YOUR NETWORK</span>
+      <h2>The real thing</h2>
+      <p>The devices on your own Wi-Fi, from your own files or a live look, with the same map and policies.</p>
+      <span class="go">Open my network &rarr;</span>
+    </a>
+    <a class="card" href="../iot/index.html">
+      <span class="tag sim">3D</span>
+      <h2>The IoT sim</h2>
+      <p>Orbit a 3D house, watch the attack spread hop by hop, and flip default-deny. Add <code>?data=real</code> for your own network.</p>
+      <span class="go">Open the 3D sim &rarr;</span>
+    </a>
+  </div>
+  <p class="note"><b>"File not accessible" on the real card?</b> The page doesn't exist until you generate it. Run this once
+    from the repo folder (use your own subnet; for Wi-Fi at home it is often <code>192.168.0.0/24</code>):<br>
+    <code>python -m real.main --quick --subnet 192.168.0.0/24 --i-own-this-network</code><br>
+    then reload. See <code>real/README.md</code>.</p>
+  <p class="note">Just want to see what it looks like? <a href="out_test/map.html">Open a preview built from FAKE sample data</a>
+    (made by <code>python -m real.main --input real/tests/fixtures --out real/out_test</code>).</p>
+</main>
+</body>
+</html>
