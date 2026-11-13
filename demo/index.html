@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Home Network Blast Radius</title>
+<!-- Draws ONLY what results.js contains. Regenerate it with:
+     python -m src.main scenarios/home.yaml --out out/ -->
+<style>
+  :root { --bg:#f7f8fb; --card:#fff; --ink:#14171f; --mute:#5d6475; --line:#dde1ea;
+          --zone:#eef1f8; --zone-line:#c6cce0; --dev:#b9bfcc; --hit:#f08c00; --foot:#d62828;
+          --host:#3d7be0; --unk:#14171f; --ok:#0a7a2f; --accent:#3d5afe; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f1218; --card:#171b24; --ink:#e8ebf2; --mute:#97a0b3;
+          --line:#2a3040; --zone:#1c2230; --zone-line:#33405a; --dev:#5b6378; --unk:#e8ebf2; --ok:#4cc27a; --accent:#7c8cff; } }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.45 system-ui,"Segoe UI",Roboto,Arial,sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:18px 20px 6px; } h1 { margin:0; font-size:22px; } .sub { color:var(--mute); margin:4px 0 0; }
+  main { display:grid; grid-template-columns: minmax(0,1.6fr) minmax(280px,1fr); gap:16px; padding:12px 20px 24px; }
+  @media (max-width: 860px) { main { grid-template-columns: 1fr; padding:12px 16px; } header { padding:16px 16px 4px; } }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px; }
+  .label { font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--mute); margin:0 0 6px; }
+  .row { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px; }
+  button.chip { font:inherit; font-size:14px; padding:6px 12px; border-radius:999px; border:1px solid var(--line);
+                background:var(--card); color:var(--ink); cursor:pointer; }
+  button.chip[aria-pressed="true"] { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .toggle { display:flex; align-items:center; gap:10px; margin:2px 0 12px; font-weight:600; cursor:pointer; }
+  .toggle input { width:40px; height:22px; accent-color:var(--ok); }
+  svg { width:100%; height:auto; display:block; }
+  svg text { font-size:11px; fill:var(--ink); text-anchor:middle; } svg .zl { text-anchor:start; fill:var(--mute); font-weight:600; }
+  .zone { fill:var(--zone); stroke:var(--zone-line); }
+  .dev { fill:var(--dev); } .hit { fill:var(--hit); } .foot { fill:var(--foot); }
+  .host { fill:var(--host); } .unk { fill:var(--unk); }
+  .reach { stroke:var(--hit); stroke-width:2.5; marker-end:url(#a-hit); }
+  .flow { stroke:var(--foot); stroke-width:3; marker-end:url(#a-foot); }
+  .blocked { stroke:var(--mute); stroke-width:2; stroke-dasharray:5 5; }
+  .x { stroke:var(--foot); stroke-width:3; }
+  .stats { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px; }
+  .stat .n { font-size:30px; font-weight:800; } .stat .l { font-size:12px; color:var(--mute); }
+  .bad { color:var(--foot); } .good { color:var(--ok); }
+  ul { margin:0; padding-left:18px; } li { margin:3px 0; }
+  .kind { font-family:Consolas,monospace; font-size:12px; font-weight:700; }
+  .legend { display:flex; flex-wrap:wrap; gap:12px; font-size:12px; color:var(--mute); margin-top:8px; }
+  .legend i { display:inline-block; width:11px; height:11px; border-radius:50%; margin-right:4px; vertical-align:-1px; }
+  .missing { padding:24px; }
+  code { font-family:Consolas,monospace; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Home Network Blast Radius</h1>
+  <p class="sub" id="sub"></p>
+</header>
+<main id="app"></main>
+<script src="results.js"></script>
+<script>
+(function () {
+  "use strict";
+  var R = window.RESULTS;
+  var app = document.getElementById("app");
+  if (!R) {
+    app.innerHTML = '<div class="card missing">No results yet. Run <code>python -m src.main scenarios/home.yaml --out out/</code> ' +
+      'from the repo folder, then reload this page.</div>';
+    return;
+  }
+  var SVGNS = "http://www.w3.org/2000/svg";
+  var state = { caseId: R.cases[0].id, policy: R.before_policy };
+  var byId = {};
+  R.devices.concat(R.hosts).forEach(function (n) { byId[n.id] = n; });
+
+  function el(tag, attrs, text) {
+    var e = tag in { svg:1, rect:1, circle:1, line:1, text:1, g:1, defs:1, marker:1, path:1 }
+      ? document.createElementNS(SVGNS, tag) : document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) { e.setAttribute(k, attrs[k]); });
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function name(id) { return byId[id] ? byId[id].name : id; }
+  function cur() { return R.cases.filter(function (c) { return c.id === state.caseId; })[0]; }
+
+  document.getElementById("sub").textContent = "Compromised device: " + name(R.foothold) +
+    ". Simulated data from " + R.scenario_file + ".";
+
+  // Layout
+  var left = el("div", { "class": "card" }), right = el("div", { "class": "card" });
+  app.appendChild(left); app.appendChild(right);
+
+  function chips(label, items, key) {
+    var wrap = el("div"); wrap.appendChild(el("p", { "class": "label" }, label));
+    var row = el("div", { "class": "row" });
+    items.forEach(function (it) {
+      var b = el("button", { "class": "chip", type: "button", "aria-pressed": String(state[key] === it.id),
+                             title: it.title || "" }, it.text);
+      b.addEventListener("click", function () { state[key] = it.id; render(); });
+      row.appendChild(b);
+    });
+    wrap.appendChild(row);
+    return wrap;
+  }
+
+  function drawMap(c, r) {
+    var xs = R.zones.map(function (z) { return z.x + z.w; }), ys = R.zones.map(function (z) { return z.y + z.h; });
+    Object.keys(byId).forEach(function (k) { xs.push(byId[k].x); ys.push(byId[k].y); });
+    var svg = el("svg", { viewBox: "0 0 " + (Math.max.apply(null, xs) + 70) + " " + (Math.max.apply(null, ys) + 40),
+                          role: "img", "aria-label": c.name + " under " + state.policy });
+    var defs = el("defs");
+    [["a-hit", "var(--hit)"], ["a-foot", "var(--foot)"]].forEach(function (m) {
+      var mk = el("marker", { id: m[0], viewBox: "0 0 10 10", refX: "22", refY: "5", markerWidth: "6",
+                              markerHeight: "6", orient: "auto-start-reverse" });
+      mk.appendChild(el("path", { d: "M0,0 L10,5 L0,10 z", style: "fill:" + m[1] }));
+      defs.appendChild(mk);
+    });
+    svg.appendChild(defs);
+    R.zones.forEach(function (z) {
+      svg.appendChild(el("rect", { "class": "zone", x: z.x, y: z.y, width: z.w, height: z.h, rx: 10 }));
+      svg.appendChild(el("text", { "class": "zl", x: z.x + 8, y: z.y + 16 }, z.name));
+    });
+    r.reach_edges.forEach(function (e) {
+      var a = byId[e[0]], b = byId[e[1]];
+      svg.appendChild(el("line", { "class": "reach", x1: a.x, y1: a.y, x2: b.x, y2: b.y }));
+    });
+    c.flows.forEach(function (f, i) {
+      var a = byId[f.src], b = byId[f.dst], ok = r.delivered[i];
+      svg.appendChild(el("line", { "class": ok ? "flow" : "blocked", x1: a.x, y1: a.y, x2: b.x, y2: b.y }));
+      if (!ok) {  // a red X halfway along a blocked flow
+        var mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+        svg.appendChild(el("line", { "class": "x", x1: mx - 7, y1: my - 7, x2: mx + 7, y2: my + 7 }));
+        svg.appendChild(el("line", { "class": "x", x1: mx - 7, y1: my + 7, x2: mx + 7, y2: my - 7 }));
+      }
+    });
+    var hit = {}; r.reachable.forEach(function (id) { hit[id] = true; });
+    R.devices.forEach(function (d) {
+      var cls = d.id === R.foothold ? "foot" : hit[d.id] ? "hit" : "dev";
+      var g = el("g"); g.appendChild(el("title", {}, d.name + " (" + d.zone + ")" + (d.critical ? ", critical" : "")));
+      g.appendChild(el("circle", { "class": cls, cx: d.x, cy: d.y, r: 14 }));
+      g.appendChild(el("text", { x: d.x, y: d.y + 29 }, d.name + (d.critical ? " *" : "")));
+      svg.appendChild(g);
+    });
+    R.hosts.forEach(function (h) {
+      svg.appendChild(el("rect", { "class": h.known ? "host" : "unk", x: h.x - 12, y: h.y - 12, width: 24, height: 24, rx: 4 }));
+      svg.appendChild(el("text", { x: h.x, y: h.y + 27 }, h.name));
+    });
+    return svg;
+  }
+
+  function render() {
+    var c = cur(), r = c.results[state.policy];
+    left.innerHTML = ""; right.innerHTML = "";
+
+    left.appendChild(chips("Scenario", R.cases.map(function (k) { return { id: k.id, text: k.name }; }), "caseId"));
+    left.appendChild(drawMap(c, r));
+    var legend = el("div", { "class": "legend" });
+    [["var(--foot)", "Compromised"], ["var(--hit)", "Reachable"], ["var(--dev)", "Safe"],
+     ["var(--host)", "Known host"], ["var(--unk)", "Unlisted host"]].forEach(function (l) {
+      var s = el("span"); var i = el("i"); i.style.background = l[0]; s.appendChild(i);
+      s.appendChild(document.createTextNode(l[1])); legend.appendChild(s);
+    });
+    legend.appendChild(el("span", {}, "* critical · red line = delivered · dashed + X = blocked"));
+    left.appendChild(legend);
+
+    var tg = el("label", { "class": "toggle" });
+    var cb = el("input", { type: "checkbox" }); cb.checked = state.policy === R.after_policy;
+    cb.addEventListener("change", function () { state.policy = cb.checked ? R.after_policy : R.before_policy; render(); });
+    tg.appendChild(cb); tg.appendChild(document.createTextNode("Default-deny (" + R.after_policy + ")"));
+    right.appendChild(tg);
+    right.appendChild(chips("Policy", R.policies.map(function (p) { return { id: p.id, text: p.id, title: p.description }; }), "policy"));
+    var pol = R.policies.filter(function (p) { return p.id === state.policy; })[0];
+    right.appendChild(el("p", { "class": "sub" }, pol.description));
+
+    var stats = el("div", { "class": "stats" });
+    function stat(n, l, cls) { var s = el("div", { "class": "stat" }); s.appendChild(el("div", { "class": "n " + cls }, n));
+      s.appendChild(el("div", { "class": "l" }, l)); stats.appendChild(s); }
+    stat(r.blast_radius + " of " + r.total, "devices reachable from " + name(R.foothold), r.blast_radius ? "bad" : "good");
+    stat(r.laptop_outbound_mb.toFixed(1) + " MB", "left the laptop (limit " + R.thresholds.outbound_mb_limit + " MB)",
+         r.laptop_outbound_mb > R.thresholds.outbound_mb_limit ? "bad" : "good");
+    right.appendChild(stats);
+
+    right.appendChild(el("p", { "class": "label" }, "Reachable devices"));
+    right.appendChild(el("p", {}, r.reachable.length ? r.reachable.map(name).join(", ") : "None"));
+
+    right.appendChild(el("p", { "class": "label" }, "Alerts (" + r.alerts.length + ")"));
+    var ul = el("ul");
+    if (!r.alerts.length) ul.appendChild(el("li", {}, "No alerts"));
+    r.alerts.forEach(function (a) {
+      var li = el("li"); li.appendChild(el("span", { "class": "kind bad" }, a.kind + " "));
+      li.appendChild(document.createTextNode(a.message)); ul.appendChild(li);
+    });
+    right.appendChild(ul);
+
+    var checks = c.checks.filter(function (ch) { return ch.policy === state.policy; });
+    if (checks.length) {
+      right.appendChild(el("p", { "class": "label", style: "margin-top:12px" }, "Expected result (test oracle)"));
+      var ul2 = el("ul");
+      checks.forEach(function (ch) {
+        ul2.appendChild(el("li", { "class": ch.pass ? "good" : "bad" }, (ch.pass ? "PASS " : "FAIL ") + ch.key +
+          ": expected " + [].concat(ch.expected).join(", ") + ", got " + [].concat(ch.got).join(", ")));
+      });
+      right.appendChild(ul2);
+    }
+  }
+  render();
+})();
+</script>
+</body>
+</html>
