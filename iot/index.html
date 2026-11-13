@@ -45,6 +45,11 @@
   .note { margin-top:14px; padding:10px 12px; border:1px dashed var(--line); border-radius:10px; color:var(--mute); font-size:13px; }
   a { color:var(--accent); } code { font-family:Consolas,monospace; font-size:12px; }
   .msg { padding:40px 24px; max-width:560px; margin:0 auto; }
+  .log { max-height:240px; overflow-y:auto; padding:8px 10px; background:#0a0e18; border:1px solid var(--line); border-radius:10px;
+         font:12px/1.5 Consolas,monospace; }
+  .log div { margin:1px 0; word-break:break-word; } .log .t { color:var(--mute); margin-right:6px; }
+  .log .hdr { color:var(--accent); } .log .hit { color:var(--hit); } .log .ok { color:var(--ok); }
+  .log .bad { color:var(--bad); font-weight:700; } .log .mute { color:var(--mute); }
   .sr { position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); }
 </style>
 </head>
@@ -265,6 +270,19 @@
     }
 
     var hits = 0, total = R.devices.length - 1, countEl = null;
+
+    // monitor log: every line comes from RESULTS, shown as the animation reaches it
+    var logLines = [], logEl = null;
+    function logRow(l) {
+      var d = el("div", { "class": l.cls }); d.appendChild(el("span", { "class": "t" }, l.t));
+      d.appendChild(document.createTextNode(l.text)); return d;
+    }
+    function log(text, cls) {
+      var l = { t: new Date().toTimeString().slice(0, 8), text: text, cls: cls || "" };
+      logLines.push(l); if (logLines.length > 300) logLines.shift();
+      if (logEl) { logEl.appendChild(logRow(l)); logEl.scrollTop = logEl.scrollHeight; }
+    }
+    function fmtBytes(b) { return b >= 1e6 ? (b / 1e6).toFixed(1) + " MB" : b + " bytes"; }
     function showBanner(text, color) { var b = document.getElementById("banner"); b.textContent = text; b.style.color = color; b.classList.add("show"); }
     function hideBanner() { document.getElementById("banner").classList.remove("show"); }
 
@@ -281,6 +299,9 @@
       var c = curCase(), r = c.results[state.policy];
       R.devices.forEach(function (d) { setNode(d.id, null); });
       setNode(R.foothold, "foot");
+      logLines.length = 0;
+      log("--- " + c.name + " [" + state.policy + "] ---", "hdr");
+      log(nm(R.foothold) + " compromised (simulated attacker foothold)", "bad");
       applyWalls(); buildPanel();
       var depth = {}; depth[R.foothold] = 0; var maxD = 0;
       r.reach_edges.forEach(function (e) { depth[e[1]] = (depth[e[0]] || 0) + 1; maxD = Math.max(maxD, depth[e[1]]); });
@@ -289,12 +310,23 @@
           var cv = arc(nodePos(e[0]), nodePos(e[1]), 1.1); addLine(cv, C.hit, false);
           if (HOP) addPulse(cv, C.hit, HOP * 0.8, false);
           setNode(e[1], "hit");
+          log(nm(e[0]) + " → " + nm(e[1]) + ": reachable, can be attacked", "hit");
         });
       });
       var tFlows = (maxD + 1) * HOP;
-      c.flows.forEach(function (f, i) { later(tFlows + (HOP ? i * 250 : 0), function () { addFlow(f, r.delivered[i]); }); });
+      c.flows.forEach(function (f, i) { later(tFlows + (HOP ? i * 250 : 0), function () {
+        addFlow(f, r.delivered[i]);
+        var h = byId[f.dst], unl = h && h.known === false;
+        log(nm(f.src) + " sent " + fmtBytes(f.bytes) + " to " + nm(f.dst) + (unl ? " (unlisted)" : "") + " at t=" + f.t + "s",
+            unl ? "bad" : "");
+        log(r.delivered[i] ? "Delivered" : "Blocked by policy", r.delivered[i] ? "ok" : "mute");
+      }); });
       var tEnd = tFlows + (HOP ? c.flows.length * 250 + 400 : 0);
       later(tEnd, function () {
+        if (!r.reach_edges.length) log("No other device reachable from " + nm(R.foothold), "ok");
+        r.alerts.forEach(function (al) { log("MONITOR " + al.kind + ": " + al.message, "bad"); });
+        if (!r.alerts.length) log("Monitor: no alerts", "mute");
+        log("Done: " + r.blast_radius + " of " + r.total + " devices reachable, " + r.laptop_outbound_mb.toFixed(1) + " MB left the laptop", "hdr");
         if (r.blast_radius === 0 && strictness() >= 0.99) { shieldPulse(); showBanner("CONTAINED", "#34d27b"); }
         else if (strictness() >= 0.99 || r.blast_radius < r.total) showBanner("LIMITED: " + r.blast_radius + " OF " + r.total, "#ffb020");
         else showBanner("SPREAD TO " + r.blast_radius + " OF " + r.total, "#ff4d4d");
@@ -355,6 +387,11 @@
         li.appendChild(document.createTextNode(al.message)); ul.appendChild(li); });
       panel.appendChild(ul);
 
+      panel.appendChild(el("h2", {}, "Monitor log"));
+      logEl = el("div", { "class": "log", role: "log", tabindex: "0", "aria-label": "Monitor log" });
+      logLines.forEach(function (l) { logEl.appendChild(logRow(l)); });
+      panel.appendChild(logEl); logEl.scrollTop = logEl.scrollHeight;
+
       if (state.hub) panel.appendChild(el("div", { "class": "note" },
         "Concept, not built: a small always-on box on the home network would watch every flow and enforce the default-deny policy " +
         "for routers that cannot (like a consumer Wi-Fi router without VLANs)."));
@@ -384,10 +421,12 @@
 
     function tick(now) {
       requestAnimationFrame(tick);
+      var due = [];                                  // run due events oldest first, so the log reads in order
       for (var i = timeline.length - 1; i >= 0; i--) {
         var e = timeline[i]; if (e.run !== runId) { timeline.splice(i, 1); continue; }
-        if (now >= e.at) { timeline.splice(i, 1); e.fn(); }
+        if (now >= e.at) { timeline.splice(i, 1); due.push(e); }
       }
+      due.reverse().sort(function (a, b) { return a.at - b.at; }).forEach(function (d) { d.fn(); });
       for (var j = pulses.length - 1; j >= 0; j--) {
         var p = pulses[j], u = (now - p.t0) / p.dur;
         if (p.ring) { var k = Math.min(u, 1); p.mesh.scale.setScalar(1 + k * 3); p.mesh.material.opacity = 1 - k;
