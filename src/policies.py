@@ -51,8 +51,11 @@ def apply_policy(name: str, scenario: Scenario,
     policies = load_policies(config_path)
     if name not in policies:
         raise ValueError(f"unknown policy {name!r}; known policies: {sorted(policies)}")
+    spec = policies[name]
+    if not isinstance(spec, dict) or not isinstance(spec.get("rules"), list):
+        raise ValueError(f"policy {name!r}: expected a mapping with a 'rules' list")
     edges: set[tuple[str, str]] = set()
-    for rule in policies[name].get("rules") or []:
+    for rule in spec["rules"]:
         if rule not in RULES:
             raise ValueError(f"policy {name!r}: unknown rule {rule!r}; known rules: {sorted(RULES)}")
         edges |= RULES[rule](scenario)

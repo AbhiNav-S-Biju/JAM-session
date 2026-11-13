@@ -58,6 +58,9 @@ def test_thresholds():
     (lambda d: d["devices"].append(copy.deepcopy(d["devices"][0])), "duplicate"),
     (lambda d: d["hosts"][0].update(id="laptop"), "both a device and a host"),
     (lambda d: d.pop("baseline"), "baseline"),
+    (lambda d: d["scenarios"][1]["flows"][0].update(bytes="48"), "bytes"),
+    (lambda d: d["scenarios"][1]["flows"][0].update(bytes=-1), "bytes"),
+    (lambda d: d["scenarios"][1]["flows"][0].update(t=-5), "t must"),
 ])
 def test_bad_reference_raises_and_names_it(tmp_path, mutate, needle):
     with pytest.raises(ValueError, match=needle):

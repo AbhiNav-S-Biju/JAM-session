@@ -44,6 +44,10 @@ def _flow(where: str, e, nodes: set[str], devices: set[str]) -> Flow:
         f = Flow(**e)
     except TypeError as err:
         raise ValueError(f"{where}: {err}") from None
+    if isinstance(f.bytes, bool) or not isinstance(f.bytes, int) or f.bytes < 0:
+        raise ValueError(f"{where}: bytes must be a non-negative integer, got {f.bytes!r}")
+    if isinstance(f.t, bool) or not isinstance(f.t, int) or f.t < 0:
+        raise ValueError(f"{where}: t must be a non-negative integer, got {f.t!r}")
     if f.src not in devices:
         raise ValueError(f"{where}: src {f.src!r} is not a device")
     if f.dst not in nodes:

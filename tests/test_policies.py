@@ -45,3 +45,11 @@ def test_unknown_rule_and_config_drives_behaviour(tmp_path):
     # Changing the config changes behaviour with no code edit.
     cfg.write_text(yaml.safe_dump({"policies": {"x": {"rules": ["baseline_only"]}}}))
     assert apply_policy("x", S, str(cfg)) == set(S.baseline)
+
+
+def test_malformed_policy_entry(tmp_path):
+    cfg = tmp_path / "p.yaml"
+    cfg.write_text(yaml.safe_dump({"policies": {"x": None, "y": {"rules": "same_zone"}}}))
+    for name in ("x", "y"):
+        with pytest.raises(ValueError, match="rules"):
+            apply_policy(name, S, str(cfg))
