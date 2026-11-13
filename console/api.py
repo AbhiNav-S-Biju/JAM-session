@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 REPO = Path(__file__).resolve().parents[1]
@@ -27,6 +28,7 @@ if str(REPO) not in sys.path:
 from engine.evidence.vault import file_sha256, verify_chain  # noqa: E402
 
 POLICY = REPO / "shared" / "policy.json"
+STATIC = Path(__file__).resolve().parent / "static"
 INCIDENT_ID = re.compile(r"^INC-\d{4}-\d{2}-\d{2}-\d{3}$")
 RUN_NAME = re.compile(r"^[a-z_]{1,32}$")
 COMMANDS = {"run_benign", "run_attack", "run_benign_unusual", "emergency_halt", "reset"}
@@ -77,9 +79,9 @@ def clean_event(ev: dict) -> dict:
     return ev
 
 
-def read_events(run: Optional[str], status: dict) -> list:
-    """Events of the current run (status run_id, else the last run in the file), sorted by ts."""
-    path = pick("events", ".jsonl", prefer=run or status.get("mode"))
+def read_events(run: Optional[str], status: dict, path: Optional[Path] = None) -> list:
+    """Events of the engine's current run (or, with no run_id / with `run`, the file's last run), by ts."""
+    path = path or pick("events", ".jsonl", prefer=run or status.get("mode"))
     rows = []
     if path:
         try:
@@ -92,8 +94,8 @@ def read_events(run: Optional[str], status: dict) -> list:
             pass
     if not rows:
         return []
-    run_ids = {r.get("run_id") for r in rows}
-    current = status.get("run_id") if not run and status.get("run_id") in run_ids else rows[-1].get("run_id")
+    # The engine's run_id wins; a new run whose events haven't arrived yet shows nothing (not the old run).
+    current = status.get("run_id") if not run and status.get("run_id") else rows[-1].get("run_id")
     rows = [clean_event(r) for r in rows if r.get("run_id") == current]
     return sorted(rows, key=lambda r: (r.get("ts") or "", r.get("id") or ""))
 
@@ -162,10 +164,17 @@ def state(run: Optional[str] = Query(None)) -> dict:
 
 
 @app.get("/api/events")
-def events(since: Optional[str] = Query(None), run: Optional[str] = Query(None)) -> list:
-    """Current-run events sorted by ts; `since` returns only events with a higher id number."""
+def events(since: Optional[str] = Query(None), run: Optional[str] = Query(None),
+           incident: Optional[str] = Query(None)) -> list:
+    """Current-run events sorted by ts; `since` returns only events with a higher id number.
+    `incident` returns that incident's evidence snapshot instead of the live file."""
     check_run(run)
-    rows = read_events(run, read_status())
+    if incident:
+        get_incident(incident)  # validates the id and that it exists
+        snap = data_dir() / "evidence" / incident / "events.jsonl"
+        rows = read_events(None, {}, snap) if snap.is_file() else []
+    else:
+        rows = read_events(run, read_status())
     if since:
         floor = event_num(since)
         rows = [r for r in rows if event_num(r.get("id")) > floor]
@@ -220,3 +229,8 @@ def verify(incident_id: str) -> dict:
 @app.get("/api/policy")
 def policy() -> dict:
     return {"policy": read_json(POLICY, {}), "sha256": policy_hash()}
+
+
+@app.get("/", include_in_schema=False)
+def dashboard() -> FileResponse:
+    return FileResponse(STATIC / "index.html")

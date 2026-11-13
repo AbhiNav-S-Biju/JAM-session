@@ -118,5 +118,25 @@ def test_control_rejects_unknown(client, cmd):
     assert (client.data / "control.json").exists() == before
 
 
+def test_incident_snapshot_events(client):
+    ev = client.get(f"/api/events?incident={HALT}").json()
+    assert len(ev) == 17 and all(e["run_id"].startswith("run-benign_unusual") for e in ev)
+    assert "host_path" not in json.dumps(ev)
+    assert client.get("/api/events?incident=../../x").status_code == 400
+    assert client.get("/api/events?incident=INC-2026-11-12-777").status_code == 404
+
+
+def test_new_run_hides_old_events(client):
+    (client.data / "engine_status_contained.json").write_text(json.dumps(
+        {"state": "running", "mode": "attack", "run_id": "run-attack-NEW"}))
+    s = client.get("/api/state").json()
+    assert s["starting"] is True and s["counts"]["events"] == 0
+
+
+def test_dashboard_served(client):
+    r = client.get("/")
+    assert r.status_code == 200 and "CAGEWATCH" in r.text
+
+
 def test_bad_run_name(client):
     assert client.get("/api/events?run=../incidents").status_code == 400
