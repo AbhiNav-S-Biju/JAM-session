@@ -22,7 +22,7 @@ def test_loads_home():
     assert len(s.hosts) == 4
     assert s.foothold == "camera"
     assert ("camera", "nvr") in s.baseline
-    assert [c.id for c in s.cases] == ["camera", "vendor", "beacon"]
+    assert [c.id for c in s.cases] == ["camera", "vendor", "beacon", "normal_day", "camera_to_laptop"]
     assert s.flows == ()
 
 

@@ -66,3 +66,27 @@ scenarios:
         flat: [beaconing]
         vlan_only: [beaconing]
         vlan_deny: [beaconing]
+
+  - id: normal_day
+    name: Normal day
+    flows:
+      - {src: laptop,     dst: weather,     bytes: 2000000, t: 100}
+      - {src: laptop,     dst: school,      bytes: 1500000, t: 200}
+      - {src: phone,      dst: weather,     bytes: 500000,  t: 300}
+      - {src: thermostat, dst: thermocloud, bytes: 64,      t: 120}
+      - {src: fridge,     dst: thermocloud, bytes: 64,      t: 240}
+    expect:
+      laptop_outbound_mb: {flat: 3.5, vlan_only: 3.5, vlan_deny: 3.5}
+
+  - id: camera_to_laptop
+    name: Compromised camera reaches laptop
+    flows:
+      - {src: camera, dst: laptop,  bytes: 2000000,  t: 5}
+      - {src: laptop, dst: unknown, bytes: 30000000, t: 20}
+    expect:
+      blast_radius: {flat: 7, vlan_only: 2, vlan_deny: 1}
+      laptop_outbound_mb: {flat: 30.0, vlan_only: 0.0, vlan_deny: 0.0}
+      alerts:
+        flat: [outbound_unlisted, outbound_over_limit, unlisted_flow]
+        vlan_only: [outbound_unlisted, unlisted_flow]
+        vlan_deny: [outbound_unlisted, unlisted_flow]

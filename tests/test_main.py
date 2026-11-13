@@ -13,7 +13,7 @@ def test_cli_writes_everything_and_prints_table(tmp_path, capsys):
         assert (tmp_path / "out" / name).is_file()
     assert (tmp_path / "demo" / "results.js").is_file()
     out = capsys.readouterr().out
-    assert "Blast radius" in out and "7 of 7" in out and "Expected results: 9 of 9 pass" in out
+    assert "Blast radius" in out and "7 of 7" in out and "Expected results: 21 of 21 pass" in out
 
 
 def test_every_expect_value_passes():
