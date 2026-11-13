@@ -30,6 +30,8 @@
   .zone { fill:var(--zone); stroke:var(--zone-line); }
   .dev { fill:var(--dev); } .hit { fill:var(--hit); } .foot { fill:var(--foot); }
   .host { fill:var(--host); } .unk { fill:var(--unk); }
+  .icon { fill:none; stroke:#fff; stroke-width:2; stroke-linecap:round; stroke-linejoin:round; pointer-events:none; }
+  @media (prefers-color-scheme: dark) { .unk + .icon { stroke:#0f1218; } }
   .reach { stroke:var(--hit); stroke-width:2.5; marker-end:url(#a-hit); }
   .flow { stroke:var(--foot); stroke-width:3; marker-end:url(#a-foot); }
   .blocked { stroke:var(--mute); stroke-width:2; stroke-dasharray:5 5; }
@@ -68,13 +70,38 @@
   R.devices.concat(R.hosts).forEach(function (n) { byId[n.id] = n; });
 
   function el(tag, attrs, text) {
-    var e = tag in { svg:1, rect:1, circle:1, line:1, text:1, g:1, defs:1, marker:1, path:1 }
+    var e = tag in { svg:1, rect:1, circle:1, line:1, text:1, g:1, defs:1, marker:1, path:1, symbol:1, use:1, title:1 }
       ? document.createElementNS(SVGNS, tag) : document.createElement(tag);
     Object.keys(attrs || {}).forEach(function (k) { e.setAttribute(k, attrs[k]); });
     if (text != null) e.textContent = text;
     return e;
   }
   function name(id) { return byId[id] ? byId[id].name : id; }
+
+  // Device pictures (24x24 line drawings). Picked from the device's data: a word in its name
+  // first (so two "iot" devices can look different), then its type, then a generic box.
+  var ICONS = {
+    laptop: '<rect x="4" y="5" width="16" height="11" rx="1"/><path d="M2 19h20"/>',
+    phone: '<rect x="7" y="2" width="10" height="20" rx="2"/><path d="M11 18h2"/>',
+    thermostat: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+    fridge: '<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M6 10h12M9 5v2M9 13v3"/>',
+    camera: '<path d="M3 8h11l5-3v13l-5-3H3z"/><circle cx="8" cy="11.5" r="1.5"/>',
+    doorbell: '<rect x="7" y="2" width="10" height="20" rx="3"/><circle cx="12" cy="7" r="1.5"/><circle cx="12" cy="15" r="2.5"/>',
+    nvr: '<rect x="2" y="7" width="20" height="10" rx="1"/><circle cx="6" cy="12" r="1"/><path d="M10 12h8"/>',
+    guest: '<circle cx="12" cy="7" r="4"/><path d="M4 21c0-4 4-7 8-7s8 3 8 7"/>',
+    iot: '<rect x="6" y="6" width="12" height="12" rx="2"/><path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>',
+    device: '<rect x="5" y="5" width="14" height="14" rx="2"/>',
+    cloud: '<path d="M7 18h10a4 4 0 0 0 0-8 6 6 0 0 0-11.5 1.5A3.5 3.5 0 0 0 7 18z"/>',
+    server: '<rect x="4" y="3" width="16" height="8" rx="1"/><rect x="4" y="13" width="16" height="8" rx="1"/><path d="M8 7h.01M8 17h.01"/>'
+  };
+  function iconFor(d) {
+    var words = String(d.name).toLowerCase().split(/[^a-z]+/);
+    for (var i = 0; i < words.length; i++) if (ICONS[words[i]]) return words[i];
+    return ICONS[d.type] ? d.type : "device";
+  }
+  function icon(kind, x, y, size) {
+    return el("use", { href: "#ic-" + kind, x: x - size / 2, y: y - size / 2, width: size, height: size, "class": "icon" });
+  }
   function cur() { return R.cases.filter(function (c) { return c.id === state.caseId; })[0]; }
 
   document.getElementById("sub").textContent = "Compromised device: " + name(R.foothold) +
@@ -109,6 +136,11 @@
       mk.appendChild(el("path", { d: "M0,0 L10,5 L0,10 z", style: "fill:" + m[1] }));
       defs.appendChild(mk);
     });
+    Object.keys(ICONS).forEach(function (k) {
+      var sym = el("symbol", { id: "ic-" + k, viewBox: "0 0 24 24" });
+      sym.innerHTML = ICONS[k];
+      defs.appendChild(sym);
+    });
     svg.appendChild(defs);
     R.zones.forEach(function (z) {
       svg.appendChild(el("rect", { "class": "zone", x: z.x, y: z.y, width: z.w, height: z.h, rx: 10 }));
@@ -131,13 +163,17 @@
     R.devices.forEach(function (d) {
       var cls = d.id === R.foothold ? "foot" : hit[d.id] ? "hit" : "dev";
       var g = el("g"); g.appendChild(el("title", {}, d.name + " (" + d.zone + ")" + (d.critical ? ", critical" : "")));
-      g.appendChild(el("circle", { "class": cls, cx: d.x, cy: d.y, r: 14 }));
-      g.appendChild(el("text", { x: d.x, y: d.y + 29 }, d.name + (d.critical ? " *" : "")));
+      g.appendChild(el("circle", { "class": cls, cx: d.x, cy: d.y, r: 18 }));
+      g.appendChild(icon(iconFor(d), d.x, d.y, 22));
+      g.appendChild(el("text", { x: d.x, y: d.y + 32 }, d.name + (d.critical ? " *" : "")));
       svg.appendChild(g);
     });
     R.hosts.forEach(function (h) {
-      svg.appendChild(el("rect", { "class": h.known ? "host" : "unk", x: h.x - 12, y: h.y - 12, width: 24, height: 24, rx: 4 }));
-      svg.appendChild(el("text", { x: h.x, y: h.y + 27 }, h.name));
+      var g = el("g"); g.appendChild(el("title", {}, h.name + (h.known ? " (known)" : " (unlisted)")));
+      g.appendChild(el("rect", { "class": h.known ? "host" : "unk", x: h.x - 16, y: h.y - 16, width: 32, height: 32, rx: 7 }));
+      g.appendChild(icon(h.known ? "cloud" : "server", h.x, h.y, 20));
+      g.appendChild(el("text", { x: h.x, y: h.y + 30 }, h.name));
+      svg.appendChild(g);
     });
     return svg;
   }
