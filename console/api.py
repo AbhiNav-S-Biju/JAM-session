@@ -19,13 +19,14 @@ from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 
 REPO = Path(__file__).resolve().parents[1]
 if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 from engine.evidence.vault import file_sha256, verify_chain  # noqa: E402
+from console.report import render_report  # noqa: E402
 
 POLICY = REPO / "shared" / "policy.json"
 STATIC = Path(__file__).resolve().parent / "static"
@@ -189,6 +190,24 @@ def incidents() -> list:
 @app.get("/api/incidents/{incident_id}")
 def incident(incident_id: str) -> dict:
     return get_incident(incident_id)
+
+
+@app.get("/api/incidents/{incident_id}/report", response_class=HTMLResponse)
+def report(incident_id: str) -> str:
+    """Printable report: evidence snapshot events (else live events of that run) + fresh verification."""
+    inc = get_incident(incident_id)
+    evdir = data_dir() / "evidence" / incident_id
+    snap = evdir / "events.jsonl"
+    if snap.is_file():
+        evs = read_events(None, {}, snap)
+    else:
+        evs = read_events(None, {"run_id": inc.get("run_id")})
+    chain = evdir / "chain.jsonl"
+    verify_result = None
+    if chain.is_file():
+        ok, info = verify_chain(str(chain))
+        verify_result = {"ok": ok, **info}
+    return render_report(inc, evs, verify_result, policy_hash())
 
 
 class Control(BaseModel):

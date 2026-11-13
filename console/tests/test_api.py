@@ -138,5 +138,39 @@ def test_dashboard_served(client):
     assert r.status_code == 200 and "CAGEWATCH" in r.text
 
 
+def test_report_attack(client):
+    r = client.get(f"/api/incidents/{ATTACK}/report")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
+    t = r.text
+    for want in (ATTACK, "R-FILE-001", "R-NET-001", "= <b>95</b>", "1302 ms", "408 ms", "✓ VALID",
+                 "sha256:888c635ac0d5a1cb", "docker pause", "TAINTED", "Recommendations"):
+        assert want in t, want
+    assert "/home/" not in t and "host_path" not in t
+
+
+def test_report_manual_halt(client):
+    t = client.get(f"/api/incidents/{HALT}/report").text
+    assert "manual emergency halt" in t and "No detection rule fired" in t and "✓ VALID" in t
+
+
+def test_report_shows_broken_chain(client):
+    chain = client.data / "evidence" / ATTACK / "chain.jsonl"
+    chain.write_text(chain.read_text().replace('"violation"', '"allow"', 1))
+    assert "✗ BROKEN" in client.get(f"/api/incidents/{ATTACK}/report").text
+
+
+def test_report_escapes_html(client):
+    incs = json.loads((client.data / "incidents.json").read_text())
+    incs[0]["notes"] = ["<script>alert(1)</script>"]
+    (client.data / "incidents.json").write_text(json.dumps(incs))
+    t = client.get(f"/api/incidents/{incs[0]['incident_id']}/report").text
+    assert "<script>alert(1)" not in t and "&lt;script&gt;" in t
+
+
+def test_report_bad_ids(client):
+    assert client.get("/api/incidents/INC-1/report").status_code == 400
+    assert client.get("/api/incidents/INC-2026-11-12-777/report").status_code == 404
+
+
 def test_bad_run_name(client):
     assert client.get("/api/events?run=../incidents").status_code == 400
